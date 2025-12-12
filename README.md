@@ -96,6 +96,7 @@ sudo rsyslogd -N1
 ```bash
 cmake -DBUILD_RSYSLOG_PLUGIN=ON \
       -DENABLE_TLS=ON \
+      -DDEBUG=ON \
       -DRSYSLOG_MODDIR=/custom/path \
       ..
 ```
@@ -103,6 +104,7 @@ cmake -DBUILD_RSYSLOG_PLUGIN=ON \
 - `BUILD_RSYSLOG_PLUGIN` - Build plugin (default: ON)
 - `ENABLE_TLS` - Enable TLS (default: ON)
 - `BUILD_TESTS` - Build tests (default: OFF)
+- `DEBUG` - Enable debug build with symbols (default: OFF)
 - `RSYSLOG_MODDIR` - Custom install directory
 
 ## License
