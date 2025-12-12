@@ -4,6 +4,7 @@
 # -DBUILD_S2S_LIB=OFF        Build standalone S2S library -DBUILD_TESTS=OFF
 # Build test program -DUSE_SYSTEM_RSYSLOG=OFF   Use system rsyslog headers
 # instead of fetching -DENABLE_TLS=ON            Enable TLS support via OpenSSL
+# -DDEBUG=ON                 Enable debug build with symbols (-g -O0)
 #
 # Build requirements: - gcc - (optional) libestr development headers if using
 # system rsyslog - (optional) OpenSSL development headers for TLS support
@@ -21,11 +22,18 @@ option(BUILD_S2S_LIB "Build standalone S2S library" OFF)
 option(BUILD_TESTS "Build test program" OFF)
 option(USE_SYSTEM_RSYSLOG "Use system-installed rsyslog headers" OFF)
 option(ENABLE_TLS "Enable TLS support using OpenSSL" ON)
+option(DEBUG "Enable debug build with symbols" OFF)
 
 # Rsyslog version to fetch from upstream
 set(RSYSLOG_VERSION
     "v8.2504.0"
     CACHE STRING "Rsyslog version tag to fetch")
+
+# Handle DEBUG option
+if(DEBUG)
+  set(CMAKE_BUILD_TYPE Debug)
+  message(STATUS "Debug mode enabled via -DDEBUG=ON")
+endif()
 
 # Default to Release build
 if(NOT CMAKE_BUILD_TYPE)
@@ -283,6 +291,7 @@ add_custom_target(
           "  USE_SYSTEM_RSYSLOG:   ${USE_SYSTEM_RSYSLOG}"
   COMMAND ${CMAKE_COMMAND} -E echo "  RSYSLOG_VERSION:      ${RSYSLOG_VERSION}"
   COMMAND ${CMAKE_COMMAND} -E echo "  ENABLE_TLS:           ${ENABLE_TLS}"
+  COMMAND ${CMAKE_COMMAND} -E echo "  DEBUG:                ${DEBUG}"
   VERBATIM)
 
 # Print configuration summary
