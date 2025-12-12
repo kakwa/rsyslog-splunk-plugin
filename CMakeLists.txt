@@ -24,7 +24,7 @@ option(ENABLE_TLS "Enable TLS support using OpenSSL" ON)
 
 # Rsyslog version to fetch from upstream
 set(RSYSLOG_VERSION
-    "v8.2412.0"
+    "v8.2504.0"
     CACHE STRING "Rsyslog version tag to fetch")
 
 # Default to Release build
@@ -99,9 +99,33 @@ if(BUILD_RSYSLOG_PLUGIN)
       OUTPUT_VARIABLE RSYSLOG_MODDIR
       OUTPUT_STRIP_TRAILING_WHITESPACE)
   endif()
-  if(NOT RSYSLOG_MODDIR)
-    set(RSYSLOG_MODDIR "/usr/lib/rsyslog")
+
+  # Fallback: detect architecture-specific directory
+  if(NOT RSYSLOG_MODDIR OR RSYSLOG_MODDIR STREQUAL "")
+    # Try to detect the multiarch library directory
+    execute_process(
+      COMMAND dpkg-architecture -qDEB_HOST_MULTIARCH
+      OUTPUT_VARIABLE DEB_HOST_MULTIARCH
+      OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+
+    if(DEB_HOST_MULTIARCH)
+      # Debian/Ubuntu multiarch path
+      set(RSYSLOG_MODDIR "/usr/lib/${DEB_HOST_MULTIARCH}/rsyslog")
+      message(STATUS "Using multiarch path: ${RSYSLOG_MODDIR}")
+    else()
+      # Check if /usr/lib64 exists (RHEL/CentOS on x86_64)
+      if(CMAKE_SIZEOF_VOID_P EQUAL 8 AND EXISTS "/usr/lib64")
+        set(RSYSLOG_MODDIR "/usr/lib64/rsyslog")
+      else()
+        set(RSYSLOG_MODDIR "/usr/lib/rsyslog")
+      endif()
+    endif()
   endif()
+
+  # Allow override via environment or cache variable
+  set(RSYSLOG_MODDIR
+      "${RSYSLOG_MODDIR}"
+      CACHE PATH "Rsyslog module installation directory")
 endif()
 
 # Find pthreads
