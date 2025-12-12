@@ -55,3 +55,8 @@ dkms.conf
 *.dwo
 
 build/
+CMakeCache.txt
+Makefile
+cmake_install.cmake
+CMakeFiles/
+_deps/
