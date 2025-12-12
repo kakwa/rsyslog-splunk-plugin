@@ -25,39 +25,39 @@ typedef struct s2s_conn s2s_conn_t;
 
 /* S2S message/event */
 typedef struct s2s_event {
-    const char *raw;          /* Raw event data */
-    time_t timestamp;         /* Event timestamp (0 = current time) */
-    const char *host;         /* Host field (optional) */
-    const char *source;       /* Source field (optional) */
-    const char *sourcetype;   /* Sourcetype field (optional) */
-    const char *index;        /* Target index (optional) */
+    const char *raw;        /* Raw event data */
+    time_t timestamp;       /* Event timestamp (0 = current time) */
+    const char *host;       /* Host field (optional) */
+    const char *source;     /* Source field (optional) */
+    const char *sourcetype; /* Sourcetype field (optional) */
+    const char *index;      /* Target index (optional) */
 } s2s_event_t;
 
 /* TLS verification mode */
 typedef enum {
-    S2S_TLS_VERIFY_NONE = 0,      /* No certificate verification */
-    S2S_TLS_VERIFY_PEER = 1,      /* Verify server certificate */
-    S2S_TLS_VERIFY_REQUIRED = 2,  /* Require valid certificate */
+    S2S_TLS_VERIFY_NONE = 0,     /* No certificate verification */
+    S2S_TLS_VERIFY_PEER = 1,     /* Verify server certificate */
+    S2S_TLS_VERIFY_REQUIRED = 2, /* Require valid certificate */
 } s2s_tls_verify_t;
 
 /* TLS configuration */
 typedef struct s2s_tls_config {
-    int enabled;                   /* Enable TLS (0 = disabled) */
-    s2s_tls_verify_t verify_mode;  /* Certificate verification mode */
-    const char *ca_file;           /* CA certificate file (PEM) */
-    const char *ca_path;           /* CA certificate directory */
-    const char *cert_file;         /* Client certificate file (PEM) */
-    const char *key_file;          /* Client private key file (PEM) */
-    const char *ciphers;           /* Cipher suite list (NULL = default) */
-    int min_version;               /* Minimum TLS version (0 = default) */
+    int enabled;                  /* Enable TLS (0 = disabled) */
+    s2s_tls_verify_t verify_mode; /* Certificate verification mode */
+    const char *ca_file;          /* CA certificate file (PEM) */
+    const char *ca_path;          /* CA certificate directory */
+    const char *cert_file;        /* Client certificate file (PEM) */
+    const char *key_file;         /* Client private key file (PEM) */
+    const char *ciphers;          /* Cipher suite list (NULL = default) */
+    int min_version;              /* Minimum TLS version (0 = default) */
 } s2s_tls_config_t;
 
 /* TLS version constants */
-#define S2S_TLS_VERSION_DEFAULT  0
-#define S2S_TLS_VERSION_TLS1_0   0x0301
-#define S2S_TLS_VERSION_TLS1_1   0x0302
-#define S2S_TLS_VERSION_TLS1_2   0x0303
-#define S2S_TLS_VERSION_TLS1_3   0x0304
+#define S2S_TLS_VERSION_DEFAULT 0
+#define S2S_TLS_VERSION_TLS1_0 0x0301
+#define S2S_TLS_VERSION_TLS1_1 0x0302
+#define S2S_TLS_VERSION_TLS1_2 0x0303
+#define S2S_TLS_VERSION_TLS1_3 0x0304
 
 /* Error codes */
 typedef enum {
@@ -98,7 +98,7 @@ void s2s_tls_config_init(s2s_tls_config_t *config);
  * @param port   Splunk S2S port (usually 9997)
  * @return       Connection handle, or NULL on failure
  */
-s2s_conn_t* s2s_connect(const char *host, int port);
+s2s_conn_t *s2s_connect(const char *host, int port);
 
 /**
  * Create a new S2S connection with TLS support.
@@ -108,8 +108,7 @@ s2s_conn_t* s2s_connect(const char *host, int port);
  * @param tls_config TLS configuration (NULL for no TLS)
  * @return           Connection handle, or NULL on failure
  */
-s2s_conn_t* s2s_connect_tls(const char *host, int port, 
-                             const s2s_tls_config_t *tls_config);
+s2s_conn_t *s2s_connect_tls(const char *host, int port, const s2s_tls_config_t *tls_config);
 
 /**
  * Close an S2S connection and free resources.
@@ -152,8 +151,7 @@ s2s_error_t s2s_send(s2s_conn_t *conn, const s2s_event_t *event);
  * @param sourcetype Sourcetype (can be NULL, defaults to "syslog")
  * @return           S2S_OK on success, error code on failure
  */
-s2s_error_t s2s_send_raw(s2s_conn_t *conn, const char *raw, 
-                          const char *index, const char *sourcetype);
+s2s_error_t s2s_send_raw(s2s_conn_t *conn, const char *raw, const char *index, const char *sourcetype);
 
 /**
  * Get error message for an error code.
@@ -161,7 +159,7 @@ s2s_error_t s2s_send_raw(s2s_conn_t *conn, const char *raw,
  * @param err    Error code
  * @return       Error message string
  */
-const char* s2s_strerror(s2s_error_t err);
+const char *s2s_strerror(s2s_error_t err);
 
 /**
  * Get the file descriptor for the connection (for select/poll).
@@ -176,4 +174,3 @@ int s2s_get_fd(s2s_conn_t *conn);
 #endif
 
 #endif /* S2S_H */
-

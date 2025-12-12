@@ -10,4 +10,3 @@
 #define HAVE_PTHREAD 1
 
 #endif /* CONFIG_H */
-
