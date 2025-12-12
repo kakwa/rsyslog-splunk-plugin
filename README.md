@@ -2,7 +2,7 @@
 
 rsyslog output module for Splunk using the native Splunk-to-Splunk (S2S) protocol with TLS support.
 
-Protocol implementation based on [go-s2s](https://github.com/mikedickey/go-s2s).
+Protocol implementation based on [go-s2s](https://github.com/mikedickey/go-s2s) from mike [at] mikedickey.com.
 
 ## Build & Install
 
@@ -39,7 +39,7 @@ action(
 )
 ```
 
-### With TLS (Recommended)
+### With TLS
 
 ```conf
 module(load="omsplunks2s")
@@ -49,11 +49,11 @@ action(
     target="splunk.example.com"
     port="9997"
     tls="on"
-    tls.verify="off"
+    tls.verify="on"
 )
 ```
 
-### With Mutual TLS
+### With Client Certificate TLS
 
 ```conf
 action(
