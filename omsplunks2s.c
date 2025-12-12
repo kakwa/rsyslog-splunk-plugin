@@ -44,6 +44,7 @@
 #include "module-template.h"
 #include "errmsg.h"
 #include "cfsysline.h"
+#include "parserif.h"
 
 #include "s2s.h"
 
@@ -91,7 +92,7 @@ static struct cnfparamblk actpblk = {CNFPARAMBLK_VERSION, sizeof(actpdescr) / si
 /* -------------------- Helper Functions -------------------- */
 
 /* Attempt to connect/reconnect to Splunk */
-static int do_connect(instanceData *pData) {
+static int do_connect(instanceData *pData, int bInitializing) {
     s2s_tls_config_t tls_config;
 
     if (pData->conn != NULL) {
@@ -114,13 +115,24 @@ static int do_connect(instanceData *pData) {
     }
 
     if (pData->conn == NULL) {
-        LogError(0, RS_RET_SUSPENDED, "omsplunks2s: failed to connect to %s:%d%s", pData->server, pData->port,
-                 pData->tls_enabled ? " (TLS)" : "");
+        if (bInitializing) {
+            /* During initialization, use dbgprintf to avoid message property issues */
+            dbgprintf("omsplunks2s: failed to connect to %s:%d%s\n", pData->server, pData->port,
+                      pData->tls_enabled ? " (TLS)" : "");
+        } else {
+            LogError(0, RS_RET_SUSPENDED, "omsplunks2s: failed to connect to %s:%d%s", pData->server, pData->port,
+                     pData->tls_enabled ? " (TLS)" : "");
+        }
         return -1;
     }
 
-    LogMsg(0, RS_RET_OK, LOG_INFO, "omsplunks2s: connected to %s:%d%s", pData->server, pData->port,
-           pData->tls_enabled ? " (TLS)" : "");
+    if (!bInitializing) {
+        LogMsg(0, RS_RET_OK, LOG_INFO, "omsplunks2s: connected to %s:%d%s", pData->server, pData->port,
+               pData->tls_enabled ? " (TLS)" : "");
+    } else {
+        dbgprintf("omsplunks2s: connected to %s:%d%s\n", pData->server, pData->port,
+                  pData->tls_enabled ? " (TLS)" : "");
+    }
     return 0;
 }
 
@@ -136,7 +148,7 @@ static int ensure_connected(instanceData *pData) {
     }
 
     pData->last_reconnect = now;
-    return do_connect(pData);
+    return do_connect(pData, 0);
 }
 
 /* -------------------- Rsyslog Module Interface -------------------- */
@@ -201,6 +213,11 @@ s2s_event_t event;
 s2s_error_t err;
 CODESTARTdoAction pData = pWrkrData->pData;
 
+/* Validate message */
+if (ppString[0] == NULL) {
+    ABORT_FINALIZE(RS_RET_INVALID_PARAMS);
+}
+
 pthread_mutex_lock(&pData->mtx);
 
 /* Ensure we have a connection */
@@ -218,8 +235,15 @@ event.source = pData->source;
 event.sourcetype = pData->sourcetype;
 event.index = pData->index;
 
+/* Debug: log event details */
+dbgprintf("omsplunks2s: sending event: msg='%.100s', host='%s', source='%s', sourcetype='%s', index='%s'\n",
+          event.raw ? event.raw : "(null)", event.host ? event.host : "(null)", event.source ? event.source : "(null)",
+          event.sourcetype ? event.sourcetype : "(null)", event.index ? event.index : "(null)");
+
 /* Send event */
 err = s2s_send(pData->conn, &event);
+dbgprintf("omsplunks2s: s2s_send returned: %d (%s)\n", err, s2s_strerror(err));
+
 if (err != S2S_OK) {
     LogError(0, RS_RET_SUSPENDED, "omsplunks2s: send failed: %s", s2s_strerror(err));
     s2s_close(pData->conn);
@@ -243,7 +267,7 @@ CODESTARTnewActInst if ((pvals = nvlstGetParams(lst, &actpblk, NULL)) == NULL) {
     ABORT_FINALIZE(RS_RET_MISSING_CNFPARAMS);
 }
 
-CODE_STD_STRING_REQUESTnewActInst(1) CHKiRet(OMSRsetEntry(*ppOMSR, 0, NULL, OMSR_NO_RQD_TPL_OPTS));
+CODE_STD_STRING_REQUESTnewActInst(1) CHKiRet(OMSRsetEntry(*ppOMSR, 0, NULL, OMSR_TPL_AS_MSG));
 CHKiRet(createInstance(&pData));
 
 for (i = 0; i < actpblk.nParams; ++i) {
@@ -274,13 +298,13 @@ for (i = 0; i < actpblk.nParams; ++i) {
     } else if (!strcmp(actpblk.descr[i].name, "tls.key")) {
         pData->tls_key_file = es_str2cstr(pvals[i].val.d.estr, NULL);
     } else {
-        LogError(0, RS_RET_INTERNAL_ERROR, "omsplunks2s: unknown param '%s'", actpblk.descr[i].name);
+        dbgprintf("omsplunks2s: program error, non-handled param '%s'\n", actpblk.descr[i].name);
     }
 }
 
 /* Validate required parameters */
 if (pData->server == NULL || pData->server[0] == '\0') {
-    LogError(0, RS_RET_CONFIG_ERROR, "omsplunks2s: 'server' parameter is required");
+    parser_errmsg("omsplunks2s: 'server' parameter is required");
     ABORT_FINALIZE(RS_RET_CONFIG_ERROR);
 }
 
@@ -290,8 +314,8 @@ if (pData->sourcetype == NULL) {
 }
 
 /* Attempt initial connection */
-if (do_connect(pData) != 0) {
-    LogMsg(0, RS_RET_OK, LOG_WARNING, "omsplunks2s: initial connection failed, will retry");
+if (do_connect(pData, 1) != 0) {
+    dbgprintf("omsplunks2s: initial connection failed, will retry\n");
 }
 
 CODE_STD_FINALIZERnewActInst cnfparamvalsDestruct(pvals, &actpblk);
