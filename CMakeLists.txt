@@ -20,6 +20,7 @@ project(
 option(BUILD_RSYSLOG_PLUGIN "Build the rsyslog output plugin" ON)
 option(BUILD_S2S_LIB "Build standalone S2S library" OFF)
 option(BUILD_TESTS "Build test program" OFF)
+option(BUILD_CLI "Build splunk-logger CLI utility" ON)
 option(USE_SYSTEM_RSYSLOG "Use system-installed rsyslog headers" OFF)
 option(ENABLE_TLS "Enable TLS support using OpenSSL" ON)
 option(DEBUG "Enable debug build with symbols" OFF)
@@ -272,6 +273,24 @@ if(BUILD_TESTS)
 endif()
 
 # ============================================================================
+# CLI Utility (splunk-logger)
+# ============================================================================
+if(BUILD_CLI)
+  add_executable(splunk-logger splunk-logger.c s2s.c)
+  target_include_directories(splunk-logger PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+  target_link_libraries(splunk-logger PRIVATE Threads::Threads)
+
+  if(HAVE_OPENSSL)
+    target_compile_definitions(splunk-logger PRIVATE HAVE_OPENSSL)
+    target_include_directories(splunk-logger PRIVATE ${OPENSSL_INCLUDE_DIR})
+    target_link_libraries(splunk-logger PRIVATE OpenSSL::SSL OpenSSL::Crypto)
+  endif()
+
+  # Install CLI utility
+  install(TARGETS splunk-logger RUNTIME DESTINATION bin)
+endif()
+
+# ============================================================================
 # Info target (similar to make info)
 # ============================================================================
 add_custom_target(
@@ -287,6 +306,7 @@ add_custom_target(
           "  BUILD_RSYSLOG_PLUGIN: ${BUILD_RSYSLOG_PLUGIN}"
   COMMAND ${CMAKE_COMMAND} -E echo "  BUILD_S2S_LIB:        ${BUILD_S2S_LIB}"
   COMMAND ${CMAKE_COMMAND} -E echo "  BUILD_TESTS:          ${BUILD_TESTS}"
+  COMMAND ${CMAKE_COMMAND} -E echo "  BUILD_CLI:            ${BUILD_CLI}"
   COMMAND ${CMAKE_COMMAND} -E echo
           "  USE_SYSTEM_RSYSLOG:   ${USE_SYSTEM_RSYSLOG}"
   COMMAND ${CMAKE_COMMAND} -E echo "  RSYSLOG_VERSION:      ${RSYSLOG_VERSION}"
@@ -301,6 +321,7 @@ message(STATUS "Build type:           ${CMAKE_BUILD_TYPE}")
 message(STATUS "Build rsyslog plugin: ${BUILD_RSYSLOG_PLUGIN}")
 message(STATUS "Build S2S library:    ${BUILD_S2S_LIB}")
 message(STATUS "Build tests:          ${BUILD_TESTS}")
+message(STATUS "Build CLI utility:    ${BUILD_CLI}")
 message(STATUS "TLS support:          ${ENABLE_TLS}")
 if(HAVE_OPENSSL)
   message(STATUS "OpenSSL version:      ${OPENSSL_VERSION}")
