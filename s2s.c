@@ -160,6 +160,7 @@ static int conn_write_all(s2s_conn_t *conn, const void *buf, size_t n) {
 }
 
 /* Write a 32-bit big-endian integer */
+/*
 static int conn_write_be32(s2s_conn_t *conn, uint32_t val) {
     unsigned char buf[4];
     buf[0] = (val >> 24) & 0xFF;
@@ -168,20 +169,26 @@ static int conn_write_be32(s2s_conn_t *conn, uint32_t val) {
     buf[3] = val & 0xFF;
     return conn_write_all(conn, buf, 4);
 }
+*/
 
 /* Write a length-prefixed string (Splunk format includes null terminator) */
+/*
 static int conn_write_string(s2s_conn_t *conn, const char *str) {
-    uint32_t len = str ? (uint32_t)strlen(str) + 1 : 0; /* Include null terminator */
+    // Include null terminator
+    uint32_t len = str ? (uint32_t)strlen(str) + 1 : 0;
     if (conn_write_be32(conn, len) != 0)
         return -1;
     if (len > 0) {
-        if (conn_write_all(conn, str, len) != 0) /* Write string with null terminator */
+        // Write string with null terminator
+        if (conn_write_all(conn, str, len) != 0)
             return -1;
     }
     return 0;
 }
+*/
 
 /* Write a key-value pair */
+/*
 static int conn_write_kv(s2s_conn_t *conn, const char *key, const char *value) {
     if (conn_write_string(conn, key) != 0)
         return -1;
@@ -189,6 +196,7 @@ static int conn_write_kv(s2s_conn_t *conn, const char *key, const char *value) {
         return -1;
     return 0;
 }
+*/
 
 /* Buffer writing helpers for batched sends */
 static void buf_write_be32(unsigned char **buf, uint32_t val) {
