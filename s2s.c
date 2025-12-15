@@ -118,13 +118,13 @@ static int conn_write_be32(s2s_conn_t *conn, uint32_t val) {
     return conn_write_all(conn, buf, 4);
 }
 
-/* Write a length-prefixed string */
+/* Write a length-prefixed string (Splunk format includes null terminator) */
 static int conn_write_string(s2s_conn_t *conn, const char *str) {
-    uint32_t len = str ? (uint32_t)strlen(str) : 0;
+    uint32_t len = str ? (uint32_t)strlen(str) + 1 : 0; /* Include null terminator */
     if (conn_write_be32(conn, len) != 0)
         return -1;
     if (len > 0) {
-        if (conn_write_all(conn, str, len) != 0)
+        if (conn_write_all(conn, str, len) != 0) /* Write string with null terminator */
             return -1;
     }
     return 0;
@@ -507,6 +507,7 @@ int s2s_get_fd(s2s_conn_t *conn) {
 
 s2s_error_t s2s_send(s2s_conn_t *conn, const s2s_event_t *event) {
     uint32_t field_count = 0;
+    uint32_t msg_size = 0;
     char timebuf[32];
     time_t ts;
 
@@ -530,8 +531,46 @@ s2s_error_t s2s_send(s2s_conn_t *conn, const s2s_event_t *event) {
         field_count++;
     field_count++; /* _done marker */
 
-    /* Write channel ID (0) */
-    if (conn_write_be32(conn, 0) != 0)
+    /* Calculate message size (all bytes after the size field itself) */
+    msg_size = 4; /* field_count field */
+
+    /* _raw field */
+    msg_size += 4 + strlen(KEY_RAW) + 1;    /* key length + key + null */
+    msg_size += 4 + strlen(event->raw) + 1; /* val length + val + null */
+
+    /* _time field */
+    ts = event->timestamp > 0 ? event->timestamp : time(NULL);
+    snprintf(timebuf, sizeof(timebuf), "%ld", (long)ts);
+    msg_size += 4 + strlen(KEY_TIME) + 1; /* key length + key + null */
+    msg_size += 4 + strlen(timebuf) + 1;  /* val length + val + null */
+
+    /* Optional fields */
+    if (event->host && event->host[0]) {
+        msg_size += 4 + strlen(KEY_HOST) + 1;
+        msg_size += 4 + strlen(event->host) + 1;
+    }
+
+    if (event->source && event->source[0]) {
+        msg_size += 4 + strlen(KEY_SOURCE) + 1;
+        msg_size += 4 + strlen(event->source) + 1;
+    }
+
+    if (event->sourcetype && event->sourcetype[0]) {
+        msg_size += 4 + strlen(KEY_SOURCETYPE) + 1;
+        msg_size += 4 + strlen(event->sourcetype) + 1;
+    }
+
+    if (event->index && event->index[0]) {
+        msg_size += 4 + strlen(KEY_INDEX) + 1;
+        msg_size += 4 + strlen(event->index) + 1;
+    }
+
+    /* _done marker (empty string = just null terminator) */
+    msg_size += 4 + strlen(KEY_DONE) + 1; /* key length + key + null */
+    msg_size += 4 + 1;                    /* val length (1) + null */
+
+    /* Write message size (NOT channel ID!) */
+    if (conn_write_be32(conn, msg_size) != 0)
         goto send_error;
 
     /* Write field count */

@@ -78,7 +78,57 @@ action(
 | `tls.cert` | No | - | Client certificate path |
 | `tls.key` | No | - | Client private key path |
 
+## CLI Utility (splunk-logger)
+
+A standalone command-line utility to send individual messages to Splunk, similar to the `logger` command.
+
+### Basic Usage
+
+```bash
+# Send a simple message
+splunk-logger -H splunk.example.com "Test message"
+
+# Send with custom index and sourcetype
+splunk-logger -H splunk.example.com -i main -t application "Application started"
+
+# Send with TLS
+splunk-logger -H splunk.example.com -T -V "Secure message"
+
+# Read from stdin
+echo "Log entry" | splunk-logger -H splunk.example.com
+```
+
+### CLI Options
+
+```
+Required:
+  -H, --host=HOST          Splunk indexer hostname or IP
+
+Optional:
+  -p, --port=PORT          Splunk S2S port (default: 9997)
+  -i, --index=INDEX        Target Splunk index
+  -s, --source=SOURCE      Source field
+  -t, --sourcetype=TYPE    Sourcetype field (default: syslog)
+  -T, --tls                Enable TLS encryption
+  -V, --tls-verify         Enable TLS certificate verification
+      --tls-no-verify      Disable TLS certificate verification
+      --ca-file=FILE       CA certificate file (PEM)
+      --cert-file=FILE     Client certificate file (PEM)
+      --key-file=FILE      Client private key file (PEM)
+```
+
+### Build CLI Only
+
+```bash
+mkdir build && cd build
+cmake -DBUILD_RSYSLOG_PLUGIN=OFF -DBUILD_CLI=ON ..
+make
+sudo make install
+```
+
 ## Testing
+
+### Test rsyslog plugin
 
 ```bash
 # Restart rsyslog
@@ -91,21 +141,31 @@ logger "Test message to Splunk"
 sudo rsyslogd -N1
 ```
 
+### Test CLI utility
+
+```bash
+# Send test message
+splunk-logger -H your-splunk-server.com "Test from CLI"
+```
+
 ## Build Options
 
 ```bash
 cmake -DBUILD_RSYSLOG_PLUGIN=ON \
+      -DBUILD_CLI=ON \
       -DENABLE_TLS=ON \
       -DDEBUG=ON \
       -DRSYSLOG_MODDIR=/custom/path \
       ..
 ```
 
-- `BUILD_RSYSLOG_PLUGIN` - Build plugin (default: ON)
-- `ENABLE_TLS` - Enable TLS (default: ON)
-- `BUILD_TESTS` - Build tests (default: OFF)
+- `BUILD_RSYSLOG_PLUGIN` - Build rsyslog plugin (default: ON)
+- `BUILD_CLI` - Build splunk-logger CLI utility (default: ON)
+- `BUILD_S2S_LIB` - Build standalone S2S library (default: OFF)
+- `ENABLE_TLS` - Enable TLS support (default: ON)
+- `BUILD_TESTS` - Build test programs (default: OFF)
 - `DEBUG` - Enable debug build with symbols (default: OFF)
-- `RSYSLOG_MODDIR` - Custom install directory
+- `RSYSLOG_MODDIR` - Custom rsyslog module install directory
 
 ## License
 
