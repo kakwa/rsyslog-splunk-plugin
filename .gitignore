@@ -29,6 +29,7 @@
 *.dylib
 
 # Executables
+splunk-logger
 *.exe
 *.out
 *.app

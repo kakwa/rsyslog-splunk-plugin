@@ -37,9 +37,9 @@ static pthread_mutex_t s2s_tls_init_mutex = PTHREAD_MUTEX_INITIALIZER;
 /* S2S Field Keys */
 #define KEY_RAW "_raw"
 #define KEY_TIME "_time"
-#define KEY_HOST "host"
-#define KEY_SOURCE "source"
-#define KEY_SOURCETYPE "sourcetype"
+#define KEY_HOST "MetaData:Host"
+#define KEY_SOURCE "MetaData:Source"
+#define KEY_SOURCETYPE "MetaData:Sourcetype"
 #define KEY_INDEX "_MetaData:Index"
 #define KEY_DONE "_done"
 
@@ -49,6 +49,9 @@ struct s2s_conn {
     int connected;
     char *host;
     int port;
+    char guid[37];          /* Forwarder GUID (UUID) */
+    uint32_t event_id;      /* Event sequence counter */
+    char capabilities[128]; /* Client capabilities string */
 #ifdef HAVE_OPENSSL
     SSL_CTX *ssl_ctx;
     SSL *ssl;
@@ -57,6 +60,24 @@ struct s2s_conn {
 };
 
 /* -------------------- Internal Helpers -------------------- */
+
+/* Read exactly n bytes (plain socket) */
+static int read_all_plain(int fd, void *buf, size_t n) {
+    char *p = buf;
+    size_t remaining = n;
+
+    while (remaining > 0) {
+        ssize_t nread = read(fd, p, remaining);
+        if (nread <= 0) {
+            if (errno == EINTR)
+                continue;
+            return -1;
+        }
+        p += nread;
+        remaining -= nread;
+    }
+    return 0;
+}
 
 /* Write exactly n bytes (plain socket) */
 static int write_all_plain(int fd, const void *buf, size_t n) {
@@ -77,6 +98,26 @@ static int write_all_plain(int fd, const void *buf, size_t n) {
 }
 
 #ifdef HAVE_OPENSSL
+/* Read exactly n bytes (TLS) */
+static int read_all_tls(SSL *ssl, void *buf, size_t n) {
+    char *p = buf;
+    size_t remaining = n;
+
+    while (remaining > 0) {
+        int nread = SSL_read(ssl, p, (int)remaining);
+        if (nread <= 0) {
+            int err = SSL_get_error(ssl, nread);
+            if (err == SSL_ERROR_WANT_READ || err == SSL_ERROR_WANT_WRITE) {
+                continue;
+            }
+            return -1;
+        }
+        p += nread;
+        remaining -= nread;
+    }
+    return 0;
+}
+
 /* Write exactly n bytes (TLS) */
 static int write_all_tls(SSL *ssl, const void *buf, size_t n) {
     const char *p = buf;
@@ -97,6 +138,16 @@ static int write_all_tls(SSL *ssl, const void *buf, size_t n) {
     return 0;
 }
 #endif
+
+/* Read exactly n bytes (auto-select based on connection) */
+static int conn_read_all(s2s_conn_t *conn, void *buf, size_t n) {
+#ifdef HAVE_OPENSSL
+    if (conn->tls_enabled && conn->ssl) {
+        return read_all_tls(conn->ssl, buf, n);
+    }
+#endif
+    return read_all_plain(conn->fd, buf, n);
+}
 
 /* Write exactly n bytes (auto-select based on connection) */
 static int conn_write_all(s2s_conn_t *conn, const void *buf, size_t n) {
@@ -139,38 +190,142 @@ static int conn_write_kv(s2s_conn_t *conn, const char *key, const char *value) {
     return 0;
 }
 
+/* Buffer writing helpers for batched sends */
+static void buf_write_be32(unsigned char **buf, uint32_t val) {
+    (*buf)[0] = (val >> 24) & 0xFF;
+    (*buf)[1] = (val >> 16) & 0xFF;
+    (*buf)[2] = (val >> 8) & 0xFF;
+    (*buf)[3] = val & 0xFF;
+    *buf += 4;
+}
+
+static void buf_write_string(unsigned char **buf, const char *str) {
+    uint32_t len = str ? (uint32_t)strlen(str) + 1 : 0;
+    buf_write_be32(buf, len);
+    if (len > 0) {
+        memcpy(*buf, str, len);
+        *buf += len;
+    }
+}
+
+static void buf_write_kv(unsigned char **buf, const char *key, const char *value) {
+    buf_write_string(buf, key);
+    buf_write_string(buf, value);
+}
+
+/* Generate a UUID v4 for the forwarder GUID */
+static void generate_guid(char *buf, size_t size) {
+    unsigned int r1, r2, r3, r4, r5;
+
+    /* Use time and random for uniqueness */
+    srand(time(NULL) ^ getpid());
+    r1 = (unsigned int)rand();
+    r2 = (unsigned int)rand();
+    r3 = (unsigned int)rand();
+    r4 = (unsigned int)rand();
+    r5 = (unsigned int)rand();
+
+    /* Format as UUID v4: xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx */
+    snprintf(buf, size, "%08X-%04X-4%03X-%04X-%08X%04X", r1, r2 & 0xFFFF, r3 & 0xFFF, ((r4 & 0x3FFF) | 0x8000), r5,
+             (unsigned int)time(NULL) & 0xFFFF);
+}
+
 /* Perform S2S handshake */
 static int do_handshake(s2s_conn_t *conn) {
-    char signature[S2S_SIGNATURE_LEN];
-    char servername[S2S_SERVERNAME_LEN];
-    char mgmtport[S2S_MGMTPORT_LEN];
+    char handshake[S2S_SIGNATURE_LEN + S2S_SERVERNAME_LEN + S2S_MGMTPORT_LEN];
     char hostname[256];
+    char *ptr = handshake;
 
     /* Prepare signature */
-    memset(signature, 0, S2S_SIGNATURE_LEN);
-    strncpy(signature, S2S_SIGNATURE_V3, S2S_SIGNATURE_LEN - 1);
+    memset(ptr, 0, S2S_SIGNATURE_LEN);
+    strncpy(ptr, S2S_SIGNATURE_V3, S2S_SIGNATURE_LEN - 1);
+    ptr += S2S_SIGNATURE_LEN;
 
     /* Prepare server name (our hostname) */
-    memset(servername, 0, S2S_SERVERNAME_LEN);
+    memset(ptr, 0, S2S_SERVERNAME_LEN);
     hostname[sizeof(hostname) - 1] = '\0';
     if (gethostname(hostname, sizeof(hostname) - 1) == 0) {
-        snprintf(servername, S2S_SERVERNAME_LEN, "%s", hostname);
+        snprintf(ptr, S2S_SERVERNAME_LEN, "%s", hostname);
     } else {
-        snprintf(servername, S2S_SERVERNAME_LEN, "s2s-client");
+        snprintf(ptr, S2S_SERVERNAME_LEN, "s2s-client");
     }
+    ptr += S2S_SERVERNAME_LEN;
 
     /* Prepare management port (not used but required) */
-    memset(mgmtport, 0, S2S_MGMTPORT_LEN);
-    strncpy(mgmtport, "8089", S2S_MGMTPORT_LEN - 1);
+    memset(ptr, 0, S2S_MGMTPORT_LEN);
+    strncpy(ptr, "8089", S2S_MGMTPORT_LEN - 1);
 
-    /* Send handshake */
-    if (conn_write_all(conn, signature, S2S_SIGNATURE_LEN) != 0)
-        return -1;
-    if (conn_write_all(conn, servername, S2S_SERVERNAME_LEN) != 0)
-        return -1;
-    if (conn_write_all(conn, mgmtport, S2S_MGMTPORT_LEN) != 0)
+    /* Send entire handshake in one write (400 bytes) */
+    if (conn_write_all(conn, handshake, sizeof(handshake)) != 0)
         return -1;
 
+    return 0;
+}
+
+/* Send S2S capabilities negotiation message and read server response */
+static int send_capabilities(s2s_conn_t *conn) {
+    const char *capabilities = "ack=0;compression=0";
+    const char *key = "__s2s_capabilities";
+    uint32_t field_count = 1;
+    uint32_t msg_size;
+    uint32_t total_size;
+    unsigned char *buffer;
+    unsigned char *ptr;
+    uint32_t server_msg_size;
+    unsigned char *server_buffer;
+
+    /* Calculate message size */
+    msg_size = 4;                             /* field_count field */
+    msg_size += 4 + strlen(key) + 1;          /* key */
+    msg_size += 4 + strlen(capabilities) + 1; /* value */
+    msg_size += 4;                            /* 4-byte null padding */
+    msg_size += 4 + 5;                        /* "_raw" trailer */
+
+    total_size = 4 + msg_size;
+
+    /* Allocate buffer */
+    buffer = malloc(total_size);
+    if (buffer == NULL)
+        return -1;
+
+    ptr = buffer;
+
+    /* Build message */
+    buf_write_be32(&ptr, msg_size);
+    buf_write_be32(&ptr, field_count);
+    buf_write_string(&ptr, key);
+    buf_write_string(&ptr, capabilities);
+
+    /* Write 4-byte null padding */
+    buf_write_be32(&ptr, 0);
+
+    /* Write "_raw" trailer */
+    buf_write_string(&ptr, "_raw");
+
+    /* Send client capabilities */
+    if (conn_write_all(conn, buffer, total_size) != 0) {
+        free(buffer);
+        return -1;
+    }
+    free(buffer);
+
+    /* Read server's capabilities response - this is REQUIRED */
+    if (conn_read_all(conn, &server_msg_size, 4) != 0) {
+        return -1;
+    }
+    server_msg_size = ntohl(server_msg_size);
+
+    server_buffer = malloc(server_msg_size);
+    if (server_buffer == NULL) {
+        return -1;
+    }
+
+    if (conn_read_all(conn, server_buffer, server_msg_size) != 0) {
+        free(server_buffer);
+        return -1;
+    }
+
+    free(server_buffer);
     return 0;
 }
 
@@ -397,6 +552,15 @@ s2s_conn_t *s2s_connect_tls(const char *host, int port, const s2s_tls_config_t *
     conn->port = port;
     conn->fd = -1;
     conn->connected = 0;
+    conn->event_id = 0;
+
+    /* Generate forwarder GUID */
+    generate_guid(conn->guid, sizeof(conn->guid));
+
+    /* Set client capabilities */
+    snprintf(conn->capabilities, sizeof(conn->capabilities),
+             "cli_can_rcv_hb=1;compression=0;pl=7;request_certificate=1;v4=1");
+
 #ifdef HAVE_OPENSSL
     conn->ssl_ctx = NULL;
     conn->ssl = NULL;
@@ -461,6 +625,23 @@ s2s_conn_t *s2s_connect_tls(const char *host, int port, const s2s_tls_config_t *
         return NULL;
     }
 
+    /* Send capabilities negotiation */
+    if (send_capabilities(conn) != 0) {
+#ifdef HAVE_OPENSSL
+        if (conn->ssl) {
+            SSL_shutdown(conn->ssl);
+            SSL_free(conn->ssl);
+        }
+        if (conn->ssl_ctx) {
+            SSL_CTX_free(conn->ssl_ctx);
+        }
+#endif
+        close(conn->fd);
+        free(conn->host);
+        free(conn);
+        return NULL;
+    }
+
     conn->connected = 1;
     return conn;
 }
@@ -508,8 +689,17 @@ int s2s_get_fd(s2s_conn_t *conn) {
 s2s_error_t s2s_send(s2s_conn_t *conn, const s2s_event_t *event) {
     uint32_t field_count = 0;
     uint32_t msg_size = 0;
+    uint32_t total_size = 0;
     char timebuf[32];
+    char eventid_buf[32];
+    char hostbuf[512];
+    char sourcebuf[512];
+    char sourcetypebuf[512];
     time_t ts;
+    unsigned char *buffer = NULL;
+    unsigned char *ptr;
+    const char *lat_chained = "{\"green\":{\"count\":0}}";
+    const char *lat_color = "green";
 
     if (conn == NULL || !conn->connected) {
         return S2S_ERR_DISCONNECTED;
@@ -521,102 +711,175 @@ s2s_error_t s2s_send(s2s_conn_t *conn, const s2s_event_t *event) {
 
     /* Count fields we'll send */
     field_count = 2; /* _raw and _time are always sent */
+    field_count++;   /* _done marker */
+    field_count++;   /* _guid */
+    field_count++;   /* __s2s_capabilities */
+    field_count++;   /* __s2s_eventId */
+    field_count++;   /* _ingLatColor */
+    field_count++;   /* _ingLatChained */
+
+    if (event->index && event->index[0])
+        field_count++;
     if (event->host && event->host[0])
         field_count++;
     if (event->source && event->source[0])
         field_count++;
     if (event->sourcetype && event->sourcetype[0])
         field_count++;
-    if (event->index && event->index[0])
-        field_count++;
-    field_count++; /* _done marker */
+
+    /* Prepare timestamp and event ID */
+    ts = event->timestamp > 0 ? event->timestamp : time(NULL);
+    snprintf(timebuf, sizeof(timebuf), "%ld", (long)ts);
+    snprintf(eventid_buf, sizeof(eventid_buf), "%u", conn->event_id);
 
     /* Calculate message size (all bytes after the size field itself) */
     msg_size = 4; /* field_count field */
 
-    /* _raw field */
+    /* _raw field (always first) */
     msg_size += 4 + strlen(KEY_RAW) + 1;    /* key length + key + null */
     msg_size += 4 + strlen(event->raw) + 1; /* val length + val + null */
 
+    /* _done marker */
+    msg_size += 4 + strlen(KEY_DONE) + 1; /* key length + key + null */
+    msg_size += 4 + strlen(KEY_DONE) + 1; /* val length + val + null */
+
     /* _time field */
-    ts = event->timestamp > 0 ? event->timestamp : time(NULL);
-    snprintf(timebuf, sizeof(timebuf), "%ld", (long)ts);
     msg_size += 4 + strlen(KEY_TIME) + 1; /* key length + key + null */
     msg_size += 4 + strlen(timebuf) + 1;  /* val length + val + null */
 
-    /* Optional fields */
-    if (event->host && event->host[0]) {
-        msg_size += 4 + strlen(KEY_HOST) + 1;
-        msg_size += 4 + strlen(event->host) + 1;
-    }
+    /* _guid field */
+    msg_size += 4 + 6; /* "_guid" + null */
+    msg_size += 4 + strlen(conn->guid) + 1;
 
-    if (event->source && event->source[0]) {
-        msg_size += 4 + strlen(KEY_SOURCE) + 1;
-        msg_size += 4 + strlen(event->source) + 1;
-    }
-
-    if (event->sourcetype && event->sourcetype[0]) {
-        msg_size += 4 + strlen(KEY_SOURCETYPE) + 1;
-        msg_size += 4 + strlen(event->sourcetype) + 1;
-    }
+    /* Optional metadata fields - format with proper prefixes */
+    hostbuf[0] = '\0';
+    sourcebuf[0] = '\0';
+    sourcetypebuf[0] = '\0';
 
     if (event->index && event->index[0]) {
         msg_size += 4 + strlen(KEY_INDEX) + 1;
         msg_size += 4 + strlen(event->index) + 1;
     }
 
-    /* _done marker (empty string = just null terminator) */
-    msg_size += 4 + strlen(KEY_DONE) + 1; /* key length + key + null */
-    msg_size += 4 + 1;                    /* val length (1) + null */
-
-    /* Write message size (NOT channel ID!) */
-    if (conn_write_be32(conn, msg_size) != 0)
-        goto send_error;
-
-    /* Write field count */
-    if (conn_write_be32(conn, field_count) != 0)
-        goto send_error;
-
-    /* Write _raw */
-    if (conn_write_kv(conn, KEY_RAW, event->raw) != 0)
-        goto send_error;
-
-    /* Write _time */
-    ts = event->timestamp > 0 ? event->timestamp : time(NULL);
-    snprintf(timebuf, sizeof(timebuf), "%ld", (long)ts);
-    if (conn_write_kv(conn, KEY_TIME, timebuf) != 0)
-        goto send_error;
-
-    /* Write optional fields */
     if (event->host && event->host[0]) {
-        if (conn_write_kv(conn, KEY_HOST, event->host) != 0)
-            goto send_error;
+        snprintf(hostbuf, sizeof(hostbuf), "host::%s", event->host);
+        msg_size += 4 + strlen(KEY_HOST) + 1;
+        msg_size += 4 + strlen(hostbuf) + 1;
     }
 
     if (event->source && event->source[0]) {
-        if (conn_write_kv(conn, KEY_SOURCE, event->source) != 0)
-            goto send_error;
+        snprintf(sourcebuf, sizeof(sourcebuf), "source::%s", event->source);
+        msg_size += 4 + strlen(KEY_SOURCE) + 1;
+        msg_size += 4 + strlen(sourcebuf) + 1;
     }
 
     if (event->sourcetype && event->sourcetype[0]) {
-        if (conn_write_kv(conn, KEY_SOURCETYPE, event->sourcetype) != 0)
-            goto send_error;
+        snprintf(sourcetypebuf, sizeof(sourcetypebuf), "sourcetype::%s", event->sourcetype);
+        msg_size += 4 + strlen(KEY_SOURCETYPE) + 1;
+        msg_size += 4 + strlen(sourcetypebuf) + 1;
     }
 
+    /* __s2s_capabilities */
+    msg_size += 4 + 20; /* "__s2s_capabilities" + null */
+    msg_size += 4 + strlen(conn->capabilities) + 1;
+
+    /* _ingLatChained */
+    msg_size += 4 + 16; /* "_ingLatChained" + null */
+    msg_size += 4 + strlen(lat_chained) + 1;
+
+    /* _ingLatColor */
+    msg_size += 4 + 14; /* "_ingLatColor" + null */
+    msg_size += 4 + strlen(lat_color) + 1;
+
+    /* __s2s_eventId */
+    msg_size += 4 + 15; /* "__s2s_eventId" + null */
+    msg_size += 4 + strlen(eventid_buf) + 1;
+
+    /* 4-byte null padding */
+    msg_size += 4;
+
+    /* "_raw" trailer string */
+    msg_size += 4 + strlen(KEY_RAW) + 1; /* length + "_raw" + null */
+
+    /* Total buffer size = size field + message */
+    total_size = 4 + msg_size;
+
+    /* Allocate buffer for entire message */
+    buffer = malloc(total_size);
+    if (buffer == NULL) {
+        return S2S_ERR_MEMORY;
+    }
+
+    ptr = buffer;
+
+    /* Write message size */
+    buf_write_be32(&ptr, msg_size);
+
+    /* Write field count */
+    buf_write_be32(&ptr, field_count);
+
+    /* Write _raw FIRST (matches actual Splunk pcap) */
+    buf_write_kv(&ptr, KEY_RAW, event->raw);
+
+    /* Write _done marker immediately after _raw */
+    buf_write_kv(&ptr, KEY_DONE, KEY_DONE);
+
+    /* Write _time */
+    buf_write_kv(&ptr, KEY_TIME, timebuf);
+
+    /* Write _guid */
+    buf_write_kv(&ptr, "_guid", conn->guid);
+
+    /* Write index (BEFORE capabilities in pcap order) */
     if (event->index && event->index[0]) {
-        if (conn_write_kv(conn, KEY_INDEX, event->index) != 0)
-            goto send_error;
+        buf_write_kv(&ptr, KEY_INDEX, event->index);
     }
 
-    /* Write _done marker (empty value) */
-    if (conn_write_kv(conn, KEY_DONE, "") != 0)
-        goto send_error;
+    /* Write __s2s_capabilities (BEFORE sourcetype in pcap order) */
+    buf_write_kv(&ptr, "__s2s_capabilities", conn->capabilities);
 
+    /* Write sourcetype (BEFORE source in pcap order) */
+    if (event->sourcetype && event->sourcetype[0]) {
+        buf_write_kv(&ptr, KEY_SOURCETYPE, sourcetypebuf);
+    }
+
+    /* Write _ingLatChained (BEFORE source in pcap order) */
+    buf_write_kv(&ptr, "_ingLatChained", lat_chained);
+
+    /* Write source (BEFORE host in pcap order) */
+    if (event->source && event->source[0]) {
+        buf_write_kv(&ptr, KEY_SOURCE, sourcebuf);
+    }
+
+    /* Write host */
+    if (event->host && event->host[0]) {
+        buf_write_kv(&ptr, KEY_HOST, hostbuf);
+    }
+
+    /* Write _ingLatColor */
+    buf_write_kv(&ptr, "_ingLatColor", lat_color);
+
+    /* Write __s2s_eventId */
+    buf_write_kv(&ptr, "__s2s_eventId", eventid_buf);
+
+    /* Write 4-byte null padding */
+    buf_write_be32(&ptr, 0);
+
+    /* Write "_raw" trailer string */
+    buf_write_string(&ptr, KEY_RAW);
+
+    /* Increment event ID for next message */
+    conn->event_id++;
+
+    /* Send entire message in one write */
+    if (conn_write_all(conn, buffer, total_size) != 0) {
+        free(buffer);
+        conn->connected = 0;
+        return S2S_ERR_SEND;
+    }
+
+    free(buffer);
     return S2S_OK;
-
-send_error:
-    conn->connected = 0;
-    return S2S_ERR_SEND;
 }
 
 s2s_error_t s2s_send_raw(s2s_conn_t *conn, const char *raw, const char *index, const char *sourcetype) {
