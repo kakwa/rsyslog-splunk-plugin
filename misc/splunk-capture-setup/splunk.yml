@@ -1,0 +1,194 @@
+- name: Local Splunk indexer + forwarder (single-file, interactive)
+  hosts: localhost
+  connection: local
+  gather_facts: no
+
+# wget -qO- https://www.splunk.com/en_us/download/splunk-enterprise.html | sed -n 's|.*="\(https://download.splunk.com/products/splunk/releases/[^"]*\)".*|\1|p'
+
+  vars:
+    # Splunk version
+    splunk_version: "10.0.2"
+    splunk_build: "e2d18b4767e9"
+    # Base paths
+    base_dir: "{{ lookup('env', 'HOME') }}/splunk_lab"
+    indexer_dir: "{{ base_dir }}/splunk"
+    forwarder_dir: "{{ base_dir }}/splunk-fwd"
+
+    # Credentials (dev only)
+    splunk_admin_password: "devpassword"
+
+    # S2S
+    s2s_port: 9997
+    s2s_target: "127.0.0.1:9997"
+
+    splunk_env:
+      SPLUNK_SYSTEMD_MANAGED: "0"
+      SYSTEMCTL_SKIP_REDIRECT: "1"
+
+  tasks:
+    - name: Ensure base directory exists
+      file:
+        path: "{{ base_dir }}"
+        state: directory
+
+    - name: Download Splunk tarball
+      get_url:
+        url: >-
+          https://download.splunk.com/products/splunk/releases/{{ splunk_version }}/linux/splunk-{{ splunk_version }}-{{ splunk_build }}-linux-amd64.tgz
+        dest: "{{ base_dir }}/splunk.tgz"
+        mode: "0644"
+
+    ################################
+    # INDEXER
+    ################################
+    - name: Extract indexer
+      unarchive:
+        src: "{{ base_dir }}/splunk.tgz"
+        dest: "{{ base_dir }}"
+        remote_src: yes
+        creates: "{{ indexer_dir }}"
+
+    - name: Initialize indexer
+      environment: "{{ splunk_env }}"
+      command: >
+        {{ indexer_dir }}/bin/splunk start
+        --accept-license
+        --answer-yes
+        --no-prompt
+        --seed-passwd {{ splunk_admin_password }}
+      args:
+        creates: "{{ indexer_dir }}/etc/.ui_login"
+      register: indexer_start
+      failed_when: indexer_start.rc != 0 and indexer_start.rc != 1
+
+    - name: Enable S2S receiver on indexer
+      copy:
+        dest: "{{ indexer_dir }}/etc/system/local/inputs.conf"
+        mode: "0644"
+        content: |
+          [splunktcp://{{ s2s_port }}]
+          disabled = 0
+          connection_host = ip
+          
+          [splunktcp-ssl:{{ s2s_port }}]
+          disabled = 1
+
+    ################################
+    # FORWARDER
+    ################################
+    - name: Check if forwarder directory exists
+      stat:
+        path: "{{ forwarder_dir }}"
+      register: forwarder_exists
+
+    - name: Create temp directory for forwarder extraction
+      file:
+        path: "{{ base_dir }}/temp_fwd"
+        state: directory
+      when: not forwarder_exists.stat.exists
+
+    - name: Extract forwarder to temp location
+      unarchive:
+        src: "{{ base_dir }}/splunk.tgz"
+        dest: "{{ base_dir }}/temp_fwd"
+        remote_src: yes
+      when: not forwarder_exists.stat.exists
+
+    - name: Move extracted splunk to forwarder directory
+      command: mv "{{ base_dir }}/temp_fwd/splunk" "{{ forwarder_dir }}"
+      when: not forwarder_exists.stat.exists
+
+    - name: Remove temp forwarder directory
+      file:
+        path: "{{ base_dir }}/temp_fwd"
+        state: absent
+      when: not forwarder_exists.stat.exists
+
+    - name: Configure forwarder web port
+      copy:
+        dest: "{{ forwarder_dir }}/etc/system/local/web.conf"
+        mode: "0644"
+        content: |
+          [settings]
+          httpport = 8001
+          mgmtHostPort = 127.0.0.1:8090
+          appServerPorts = 8066
+
+    - name: Configure forwarder KVStore
+      copy:
+        dest: "{{ forwarder_dir }}/etc/system/local/server.conf"
+        mode: "0644"
+        content: |
+          [kvstore]
+          disabled = true
+          
+          [general]
+          serverName = splunk-forwarder
+
+    - name: Initialize forwarder
+      environment: "{{ splunk_env }}"
+      command: >
+        {{ forwarder_dir }}/bin/splunk start
+        --accept-license
+        --answer-yes
+        --no-prompt
+        --seed-passwd {{ splunk_admin_password }}
+      args:
+        creates: "{{ forwarder_dir }}/etc/.ui_login"
+      register: forwarder_start
+      failed_when: forwarder_start.rc != 0 and forwarder_start.rc != 1
+
+    - name: Stop forwarder after init
+      command: "{{ forwarder_dir }}/bin/splunk stop"
+
+    - name: Configure forwarder outputs (S2S)
+      copy:
+        dest: "{{ forwarder_dir }}/etc/system/local/outputs.conf"
+        mode: "0644"
+        content: |
+          [tcpout]
+          defaultGroup = indexer
+
+          [tcpout:indexer]
+          server = {{ s2s_target }}
+          useSSL = false
+          useClientSSLCompression = false
+
+    - name: Create test log file
+      copy:
+        dest: "{{ base_dir }}/test.log"
+        content: |
+          splunk forwarder test event
+          hello from splunk-fwd
+
+    - name: Configure forwarder input
+      copy:
+        dest: "{{ forwarder_dir }}/etc/system/local/inputs.conf"
+        mode: "0644"
+        content: |
+          [monitor://{{ base_dir }}/test.log]
+          disabled = 0
+          index = main
+          sourcetype = dev:test
+
+    ################################
+    # LAUNCH SCRIPTS
+    ################################
+    - name: Create indexer launcher
+      copy:
+        dest: "{{ base_dir }}/launch-indexer.sh"
+        mode: "0755"
+        content: |
+          #!/usr/bin/env bash
+          set -e
+          exec "$(dirname "$0")/splunk/bin/splunk" start --no-prompt
+
+    - name: Create forwarder launcher
+      copy:
+        dest: "{{ base_dir }}/launch-forwarder.sh"
+        mode: "0755"
+        content: |
+          #!/usr/bin/env bash
+          set -e
+          exec "$(dirname "$0")/splunk-fwd/bin/splunk" start --no-prompt
+
