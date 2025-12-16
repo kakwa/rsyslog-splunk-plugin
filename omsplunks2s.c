@@ -55,6 +55,14 @@ MODULE_CNFNAME("omsplunks2s")
 /* Module static data */
 DEF_OMOD_STATIC_DATA
 
+/* Custom templates for S2S */
+#define SPLUNK_S2S_RAWMSG "\"%msg%\""
+#define SPLUNK_S2S_FACILITY "\"%syslogfacility-text%\""
+#define SPLUNK_S2S_SEVERITY "\"%syslogseverity-text%\""
+#define SPLUNK_S2S_HOSTNAME "\"%hostname%\""
+#define SPLUNK_S2S_PROGRAM "\"%programname%\""
+#define SPLUNK_S2S_PROCID "\"%procid%\""
+
 /* Instance configuration */
 typedef struct _instanceData {
     char *server;
@@ -82,10 +90,11 @@ typedef struct wrkrInstanceData {
 
 /* Configuration parameters */
 static struct cnfparamdescr actpdescr[] = {
-    {"server", eCmdHdlrGetWord, 0},         {"port", eCmdHdlrInt, 0},         {"index", eCmdHdlrGetWord, 0},
-    {"host", eCmdHdlrGetWord, 0},           {"source", eCmdHdlrGetWord, 0},   {"sourcetype", eCmdHdlrGetWord, 0},
-    {"reconnect.interval", eCmdHdlrInt, 0}, {"tls", eCmdHdlrBinary, 0},       {"tls.verify", eCmdHdlrBinary, 0},
-    {"tls.cacert", eCmdHdlrGetWord, 0},     {"tls.cert", eCmdHdlrGetWord, 0}, {"tls.key", eCmdHdlrGetWord, 0},
+    {"server", eCmdHdlrGetWord, 0},         {"port", eCmdHdlrInt, 0},           {"index", eCmdHdlrGetWord, 0},
+    {"host", eCmdHdlrGetWord, 0},           {"source", eCmdHdlrGetWord, 0},     {"sourcetype", eCmdHdlrGetWord, 0},
+    {"reconnect.interval", eCmdHdlrInt, 0}, {"template", eCmdHdlrGetWord, 0},   {"tls", eCmdHdlrBinary, 0},
+    {"tls.verify", eCmdHdlrBinary, 0},      {"tls.cacert", eCmdHdlrGetWord, 0}, {"tls.cert", eCmdHdlrGetWord, 0},
+    {"tls.key", eCmdHdlrGetWord, 0},
 };
 static struct cnfparamblk actpblk = {CNFPARAMBLK_VERSION, sizeof(actpdescr) / sizeof(struct cnfparamdescr), actpdescr};
 
@@ -234,11 +243,29 @@ event.host = pData->host;
 event.source = pData->source;
 event.sourcetype = pData->sourcetype;
 event.index = pData->index;
+event.field_count = 0;
+
+/* Add custom metadata fields from syslog */
+if (ppString[1] && ppString[1][0]) {
+    s2s_event_add_field(&event, "syslog_facility", (const char *)ppString[1]);
+}
+if (ppString[2] && ppString[2][0]) {
+    s2s_event_add_field(&event, "syslog_severity", (const char *)ppString[2]);
+}
+if (ppString[3] && ppString[3][0]) {
+    s2s_event_add_field(&event, "syslog_hostname", (const char *)ppString[3]);
+}
+if (ppString[4] && ppString[4][0]) {
+    s2s_event_add_field(&event, "syslog_program", (const char *)ppString[4]);
+}
+if (ppString[5] && ppString[5][0]) {
+    s2s_event_add_field(&event, "syslog_pid", (const char *)ppString[5]);
+}
 
 /* Debug: log event details */
-dbgprintf("omsplunks2s: sending event: msg='%.100s', host='%s', source='%s', sourcetype='%s', index='%s'\n",
+dbgprintf("omsplunks2s: sending event: msg='%.100s', host='%s', source='%s', sourcetype='%s', index='%s', fields=%d\n",
           event.raw ? event.raw : "(null)", event.host ? event.host : "(null)", event.source ? event.source : "(null)",
-          event.sourcetype ? event.sourcetype : "(null)", event.index ? event.index : "(null)");
+          event.sourcetype ? event.sourcetype : "(null)", event.index ? event.index : "(null)", event.field_count);
 
 /* Send event */
 err = s2s_send(pData->conn, &event);
@@ -267,7 +294,6 @@ CODESTARTnewActInst if ((pvals = nvlstGetParams(lst, &actpblk, NULL)) == NULL) {
     ABORT_FINALIZE(RS_RET_MISSING_CNFPARAMS);
 }
 
-CODE_STD_STRING_REQUESTnewActInst(1) CHKiRet(OMSRsetEntry(*ppOMSR, 0, NULL, OMSR_TPL_AS_MSG));
 CHKiRet(createInstance(&pData));
 
 for (i = 0; i < actpblk.nParams; ++i) {
@@ -313,6 +339,21 @@ if (pData->sourcetype == NULL) {
     pData->sourcetype = strdup("syslog");
 }
 
+/* Setup templates - message + metadata fields */
+CODE_STD_STRING_REQUESTnewActInst(6)
+    /* Template 0: Main message template */
+    CHKiRet(OMSRsetEntry(*ppOMSR, 0, (uchar *)strdup(" SPLUNK_S2S_RAWMSG"), OMSR_NO_RQD_TPL_OPTS));
+/* Template 1: syslog facility */
+CHKiRet(OMSRsetEntry(*ppOMSR, 1, (uchar *)strdup(" SPLUNK_S2S_FACILITY"), OMSR_NO_RQD_TPL_OPTS));
+/* Template 2: syslog severity */
+CHKiRet(OMSRsetEntry(*ppOMSR, 2, (uchar *)strdup(" SPLUNK_S2S_SEVERITY"), OMSR_NO_RQD_TPL_OPTS));
+/* Template 3: hostname */
+CHKiRet(OMSRsetEntry(*ppOMSR, 3, (uchar *)strdup(" SPLUNK_S2S_HOSTNAME"), OMSR_NO_RQD_TPL_OPTS));
+/* Template 4: program name */
+CHKiRet(OMSRsetEntry(*ppOMSR, 4, (uchar *)strdup(" SPLUNK_S2S_PROGRAM"), OMSR_NO_RQD_TPL_OPTS));
+/* Template 5: process ID */
+CHKiRet(OMSRsetEntry(*ppOMSR, 5, (uchar *)strdup(" SPLUNK_S2S_PROCID"), OMSR_NO_RQD_TPL_OPTS));
+
 /* Attempt initial connection */
 if (do_connect(pData, 1) != 0) {
     dbgprintf("omsplunks2s: initial connection failed, will retry\n");
@@ -331,5 +372,28 @@ CODE_STD_FINALIZERparseSelectorAct ENDparseSelectorAct
         BEGINqueryEtryPt CODESTARTqueryEtryPt CODEqueryEtryPt_STD_OMOD_QUERIES CODEqueryEtryPt_STD_OMOD8_QUERIES
             CODEqueryEtryPt_STD_CONF2_OMOD_QUERIES ENDqueryEtryPt
 
-            BEGINmodInit() CODESTARTmodInit *ipIFVersProvided = CURR_MOD_IF_VERSION;
-CODEmodInit_QueryRegCFSLineHdlr ENDmodInit
+            BEGINmodInit() CODESTARTmodInit uchar *pTmp;
+*ipIFVersProvided = CURR_MOD_IF_VERSION;
+CODEmodInit_QueryRegCFSLineHdlr
+
+    /* Register custom templates */
+    DBGPRINTF("omsplunks2s: registering custom templates\n");
+
+pTmp = (uchar *)SPLUNK_S2S_RAWMSG;
+tplAddLine(ourConf, " SPLUNK_S2S_RAWMSG", &pTmp);
+
+pTmp = (uchar *)SPLUNK_S2S_FACILITY;
+tplAddLine(ourConf, " SPLUNK_S2S_FACILITY", &pTmp);
+
+pTmp = (uchar *)SPLUNK_S2S_SEVERITY;
+tplAddLine(ourConf, " SPLUNK_S2S_SEVERITY", &pTmp);
+
+pTmp = (uchar *)SPLUNK_S2S_HOSTNAME;
+tplAddLine(ourConf, " SPLUNK_S2S_HOSTNAME", &pTmp);
+
+pTmp = (uchar *)SPLUNK_S2S_PROGRAM;
+tplAddLine(ourConf, " SPLUNK_S2S_PROGRAM", &pTmp);
+
+pTmp = (uchar *)SPLUNK_S2S_PROCID;
+tplAddLine(ourConf, " SPLUNK_S2S_PROCID", &pTmp);
+ENDmodInit
