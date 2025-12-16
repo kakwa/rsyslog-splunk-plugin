@@ -74,31 +74,26 @@ if(BUILD_RSYSLOG_PLUGIN)
       endif()
     endif()
   else()
-    # Fetch rsyslog from upstream
-    include(FetchContent)
+    # Use rsyslog from git submodule in deps/
+    set(RSYSLOG_SUBMODULE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/deps/rsyslog")
 
-    message(STATUS "Fetching rsyslog ${RSYSLOG_VERSION} from upstream...")
-
-    FetchContent_Declare(
-      rsyslog
-      GIT_REPOSITORY https://github.com/rsyslog/rsyslog.git
-      GIT_TAG ${RSYSLOG_VERSION}
-      GIT_SHALLOW TRUE
-      GIT_PROGRESS TRUE)
-
-    # Only fetch, don't configure/build rsyslog itself
-    FetchContent_GetProperties(rsyslog)
-    if(NOT rsyslog_POPULATED)
-      FetchContent_Populate(rsyslog)
+    if(NOT EXISTS "${RSYSLOG_SUBMODULE_DIR}/runtime")
+      message(
+        FATAL_ERROR
+          "rsyslog submodule not found at ${RSYSLOG_SUBMODULE_DIR}\n"
+          "Please initialize the submodule:\n"
+          "  git submodule add -b ${RSYSLOG_VERSION} https://github.com/rsyslog/rsyslog.git deps/rsyslog\n"
+          "  git submodule update --init --recursive\n"
+          "Or use system rsyslog with -DUSE_SYSTEM_RSYSLOG=ON")
     endif()
 
-    # Set include directories from fetched source
+    # Set include directories from submodule source
     set(RSYSLOG_INCLUDE_DIRS
-        "${rsyslog_SOURCE_DIR}/runtime" "${rsyslog_SOURCE_DIR}"
-        "${rsyslog_SOURCE_DIR}/grammar")
+        "${RSYSLOG_SUBMODULE_DIR}/runtime" "${RSYSLOG_SUBMODULE_DIR}"
+        "${RSYSLOG_SUBMODULE_DIR}/grammar")
     set(RSYSLOG_FOUND TRUE)
 
-    message(STATUS "Rsyslog source: ${rsyslog_SOURCE_DIR}")
+    message(STATUS "Using rsyslog submodule: ${RSYSLOG_SUBMODULE_DIR}")
   endif()
 
   # Get rsyslog module directory for installation
