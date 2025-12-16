@@ -63,6 +63,8 @@ int main(int argc, char *argv[]) {
 
     printf("Connected! Sending %d test messages...\n", count);
 
+    char seq_buf[16]; /* Buffer for sequence number field */
+
     for (i = 0; i < count; i++) {
         s2s_event_t event = {0};
         time_t now = time(NULL);
@@ -79,6 +81,15 @@ int main(int argc, char *argv[]) {
         event.source = "s2s_test";
         event.sourcetype = "s2s:test";
         event.index = "main";
+        event.field_count = 0;
+
+        /* Add custom fields */
+        s2s_event_add_field(&event, "test_id", "s2s_test_001");
+        s2s_event_add_field(&event, "environment", "development");
+        s2s_event_add_field(&event, "application", "s2s-library");
+
+        snprintf(seq_buf, sizeof(seq_buf), "%d", i + 1);
+        s2s_event_add_field(&event, "sequence", seq_buf);
 
         err = s2s_send(conn, &event);
         if (err != S2S_OK) {

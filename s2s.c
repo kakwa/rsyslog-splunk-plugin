@@ -694,6 +694,19 @@ int s2s_get_fd(s2s_conn_t *conn) {
     return conn->fd;
 }
 
+int s2s_event_add_field(s2s_event_t *event, const char *key, const char *value) {
+    if (event == NULL || key == NULL || value == NULL) {
+        return -1;
+    }
+    if (event->field_count >= S2S_MAX_FIELDS) {
+        return -1; /* Field array is full */
+    }
+    event->fields[event->field_count].key = key;
+    event->fields[event->field_count].value = value;
+    event->field_count++;
+    return 0;
+}
+
 s2s_error_t s2s_send(s2s_conn_t *conn, const s2s_event_t *event) {
     uint32_t field_count = 0;
     uint32_t msg_size = 0;
@@ -734,6 +747,13 @@ s2s_error_t s2s_send(s2s_conn_t *conn, const s2s_event_t *event) {
         field_count++;
     if (event->sourcetype && event->sourcetype[0])
         field_count++;
+
+    /* Count custom fields */
+    for (int i = 0; i < event->field_count; i++) {
+        if (event->fields[i].key && event->fields[i].key[0] && event->fields[i].value && event->fields[i].value[0]) {
+            field_count++;
+        }
+    }
 
     /* Prepare timestamp and event ID */
     ts = event->timestamp > 0 ? event->timestamp : time(NULL);
@@ -785,6 +805,14 @@ s2s_error_t s2s_send(s2s_conn_t *conn, const s2s_event_t *event) {
         snprintf(sourcetypebuf, sizeof(sourcetypebuf), "sourcetype::%s", event->sourcetype);
         msg_size += 4 + strlen(KEY_SOURCETYPE) + 1;
         msg_size += 4 + strlen(sourcetypebuf) + 1;
+    }
+
+    /* Custom fields */
+    for (int i = 0; i < event->field_count; i++) {
+        if (event->fields[i].key && event->fields[i].key[0] && event->fields[i].value && event->fields[i].value[0]) {
+            msg_size += 4 + strlen(event->fields[i].key) + 1;
+            msg_size += 4 + strlen(event->fields[i].value) + 1;
+        }
     }
 
     /* __s2s_capabilities */
@@ -862,6 +890,13 @@ s2s_error_t s2s_send(s2s_conn_t *conn, const s2s_event_t *event) {
     /* Write host */
     if (event->host && event->host[0]) {
         buf_write_kv(&ptr, KEY_HOST, hostbuf);
+    }
+
+    /* Write custom fields */
+    for (int i = 0; i < event->field_count; i++) {
+        if (event->fields[i].key && event->fields[i].key[0] && event->fields[i].value && event->fields[i].value[0]) {
+            buf_write_kv(&ptr, event->fields[i].key, event->fields[i].value);
+        }
     }
 
     /* Write _ingLatColor */

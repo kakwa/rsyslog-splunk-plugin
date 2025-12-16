@@ -23,14 +23,25 @@ extern "C" {
 /* S2S connection handle */
 typedef struct s2s_conn s2s_conn_t;
 
+/* Custom field key-value pair */
+typedef struct s2s_field {
+    const char *key;
+    const char *value;
+} s2s_field_t;
+
+/* Maximum number of custom fields */
+#define S2S_MAX_FIELDS 32
+
 /* S2S message/event */
 typedef struct s2s_event {
-    const char *raw;        /* Raw event data */
-    time_t timestamp;       /* Event timestamp (0 = current time) */
-    const char *host;       /* Host field (optional) */
-    const char *source;     /* Source field (optional) */
-    const char *sourcetype; /* Sourcetype field (optional) */
-    const char *index;      /* Target index (optional) */
+    const char *raw;                    /* Raw event data */
+    time_t timestamp;                   /* Event timestamp (0 = current time) */
+    const char *host;                   /* Host field (optional) */
+    const char *source;                 /* Source field (optional) */
+    const char *sourcetype;             /* Sourcetype field (optional) */
+    const char *index;                  /* Target index (optional) */
+    s2s_field_t fields[S2S_MAX_FIELDS]; /* Custom fields array */
+    int field_count;                    /* Number of custom fields */
 } s2s_event_t;
 
 /* TLS verification mode */
@@ -141,6 +152,16 @@ int s2s_is_connected(s2s_conn_t *conn);
  * @return       S2S_OK on success, error code on failure
  */
 s2s_error_t s2s_send(s2s_conn_t *conn, const s2s_event_t *event);
+
+/**
+ * Add a custom field to an event.
+ *
+ * @param event  Event structure
+ * @param key    Field name
+ * @param value  Field value
+ * @return       0 on success, -1 if field array is full
+ */
+int s2s_event_add_field(s2s_event_t *event, const char *key, const char *value);
 
 /**
  * Send a simple string event to Splunk.
