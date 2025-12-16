@@ -329,19 +329,20 @@ static rsRetVal doAction(void *pMsgData, wrkrInstanceData_t *pWrkrData) {
         s2s_event_add_field(&event, "syslog_program", (const char *)ppString[4]);
         event.source = (const char *)ppString[4];
     }
-    //if (ppString[5] && ppString[5][0]) {
-    //    s2s_event_add_field(&event, "syslog_facility", (const char *)ppString[5]);
-    //}
-    //if (ppString[6] && ppString[6][0]) {
-    //    s2s_event_add_field(&event, "syslog_appname", (const char *)ppString[6]);
-    //}
+    // if (ppString[5] && ppString[5][0]) {
+    //     s2s_event_add_field(&event, "syslog_facility", (const char *)ppString[5]);
+    // }
+    // if (ppString[6] && ppString[6][0]) {
+    //     s2s_event_add_field(&event, "syslog_appname", (const char *)ppString[6]);
+    // }
 
     s2s_event_add_field(&event, "rsyslog_plugin", "omsplunks2s");
 
     /* Debug: log event details */
     dbgprintf(
         "omsplunks2s: sending event: msg='%.100s', host='%s', source='%s', sourcetype='%s', index='%s', fields=%d "
-        "[syslog_procid='%s', syslog_severity='%s', syslog_hostname='%s', syslog_program='%s', rsyslog_plugin='omsplunks2s']\n",
+        "[syslog_procid='%s', syslog_severity='%s', syslog_hostname='%s', syslog_program='%s', "
+        "rsyslog_plugin='omsplunks2s']\n",
         event.raw ? event.raw : "(null)", event.host ? event.host : "(null)", event.source ? event.source : "(null)",
         event.sourcetype ? event.sourcetype : "(null)", event.index ? event.index : "(null)", event.field_count,
         (ppString[1] && ppString[1][0]) ? (const char *)ppString[1] : "(null)",
@@ -445,7 +446,6 @@ static rsRetVal newActInst(uchar __attribute__((unused)) * modName, struct nvlst
         pData->sourcetype = strdup("syslog");
     }
 
-
     dbgprintf("omsplunks2s: registering template SPLUNK_S2S_RAWMSG'\n");
     /* Setup templates - message + metadata fields (max 7 due to rsyslog limit) */
     /* Template 0: Raw message */
@@ -467,12 +467,13 @@ static rsRetVal newActInst(uchar __attribute__((unused)) * modName, struct nvlst
     dbgprintf("omsplunks2s: registering template SPLUNK_S2S_PROGRAM'\n");
     if ((iRet = OMSRsetEntry(*ppOMSR, 4, (uchar *)strdup(" SPLUNK_S2S_PROGRAM"), OMSR_NO_RQD_TPL_OPTS)) != RS_RET_OK)
         goto finalize_it;
-    //dbgprintf("omsplunks2s: registering template SPLUNK_S2S_FACILITY'\n");
-    //if ((iRet = OMSRsetEntry(*ppOMSR, 5, (uchar *)strdup(" SPLUNK_S2S_FACILITY"), OMSR_NO_RQD_TPL_OPTS)) != RS_RET_OK)
-    //    goto finalize_it;
-    //dbgprintf("omsplunks2s: registering template SPLUNK_S2S_APPNAME'\n");
-    //if ((iRet = OMSRsetEntry(*ppOMSR, 6, (uchar *)strdup(" SPLUNK_S2S_APPNAME"), OMSR_NO_RQD_TPL_OPTS)) != RS_RET_OK)
-    //    goto finalize_it;
+    // dbgprintf("omsplunks2s: registering template SPLUNK_S2S_FACILITY'\n");
+    // if ((iRet = OMSRsetEntry(*ppOMSR, 5, (uchar *)strdup(" SPLUNK_S2S_FACILITY"), OMSR_NO_RQD_TPL_OPTS)) !=
+    // RS_RET_OK)
+    //     goto finalize_it;
+    // dbgprintf("omsplunks2s: registering template SPLUNK_S2S_APPNAME'\n");
+    // if ((iRet = OMSRsetEntry(*ppOMSR, 6, (uchar *)strdup(" SPLUNK_S2S_APPNAME"), OMSR_NO_RQD_TPL_OPTS)) != RS_RET_OK)
+    //     goto finalize_it;
 
 /* CODE_STD_FINALIZERnewActInst - Cleanup and return logic */
 finalize_it:
@@ -542,6 +543,8 @@ static rsRetVal modExit(void) {
     return iRet;
 }
 
+// clang-format off
+
 /* BEGINqueryEtryPt - Standard module entry point query function */
 BEGINqueryEtryPt // {
     CODESTARTqueryEtryPt
@@ -591,3 +594,4 @@ BEGINmodInit() // {
 //  tplAddLine(ourConf, " SPLUNK_S2S_APPNAME", &pTmp);
 // }
 ENDmodInit
+    // clang-format on
