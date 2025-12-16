@@ -327,6 +327,7 @@ static rsRetVal doAction(void *pMsgData, wrkrInstanceData_t *pWrkrData) {
     }
     if (ppString[4] && ppString[4][0]) {
         s2s_event_add_field(&event, "syslog_program", (const char *)ppString[4]);
+        event.source = (const char *)ppString[4];
     }
     //if (ppString[5] && ppString[5][0]) {
     //    s2s_event_add_field(&event, "syslog_facility", (const char *)ppString[5]);
@@ -552,7 +553,7 @@ ENDqueryEtryPt
 
 /* Custom templates for S2S */
 /* rsyslog limit is 5 templates (CONF_OMOD_NUMSTRINGS_MAXSIZE in OMSRconstruct)*/
-#define SPLUNK_S2S_RAWMSG "\"%msg:2:$%\""
+#define SPLUNK_S2S_RAWMSG "\"%programname%[%procid%](%syslogseverity-text%): %msg:2:$%\""
 //#define SPLUNK_S2S_FACILITY "\"%syslogfacility-text%\""
 #define SPLUNK_S2S_SEVERITY "\"%syslogseverity-text%\""
 #define SPLUNK_S2S_PROGRAM "\"%programname%\""
