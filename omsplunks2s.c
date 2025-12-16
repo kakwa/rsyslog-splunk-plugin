@@ -161,208 +161,374 @@ static int ensure_connected(instanceData *pData) {
 
 /* -------------------- Rsyslog Module Interface -------------------- */
 
-BEGINcreateInstance CODESTARTcreateInstance pData->server = NULL;
-pData->port = 9997;
-pData->index = NULL;
-pData->host = NULL;
-pData->source = NULL;
-pData->sourcetype = NULL;
-pData->reconnect_interval = 30;
-pData->conn = NULL;
-pData->last_reconnect = 0;
-pData->tls_enabled = 0;
-pData->tls_verify = 1;
-pData->tls_ca_file = NULL;
-pData->tls_cert_file = NULL;
-pData->tls_key_file = NULL;
-pthread_mutex_init(&pData->mtx, NULL);
-ENDcreateInstance
+/* BEGINcreateInstance - Creates function: static rsRetVal createInstance(instanceData **ppData) */
+static rsRetVal createInstance(instanceData **ppData) {
+    rsRetVal iRet = RS_RET_OK; /* DEFiRet */
+    instanceData *pData;
+    /* CODESTARTcreateInstance */
 
-    BEGINcreateWrkrInstance CODESTARTcreateWrkrInstance ENDcreateWrkrInstance
+    if ((pData = calloc(1, sizeof(instanceData))) == NULL) {
+        return RS_RET_OUT_OF_MEMORY;
+    }
 
-        BEGINfreeInstance CODESTARTfreeInstance pthread_mutex_lock(&pData->mtx);
-if (pData->conn != NULL) {
-    s2s_close(pData->conn);
+    pData->server = NULL;
+    pData->port = 9997;
+    pData->index = NULL;
+    pData->host = NULL;
+    pData->source = NULL;
+    pData->sourcetype = NULL;
+    pData->reconnect_interval = 30;
     pData->conn = NULL;
-}
-pthread_mutex_unlock(&pData->mtx);
-pthread_mutex_destroy(&pData->mtx);
-free(pData->server);
-free(pData->index);
-free(pData->host);
-free(pData->source);
-free(pData->sourcetype);
-free(pData->tls_ca_file);
-free(pData->tls_cert_file);
-free(pData->tls_key_file);
-ENDfreeInstance
+    pData->last_reconnect = 0;
+    pData->tls_enabled = 0;
+    pData->tls_verify = 1;
+    pData->tls_ca_file = NULL;
+    pData->tls_cert_file = NULL;
+    pData->tls_key_file = NULL;
+    pthread_mutex_init(&pData->mtx, NULL);
 
-    BEGINfreeWrkrInstance CODESTARTfreeWrkrInstance ENDfreeWrkrInstance
-
-        BEGINdbgPrintInstInfo CODESTARTdbgPrintInstInfo dbgprintf("omsplunks2s:\n");
-dbgprintf("\tserver='%s'\n", pData->server ? pData->server : "(null)");
-dbgprintf("\tport=%d\n", pData->port);
-dbgprintf("\tindex='%s'\n", pData->index ? pData->index : "(null)");
-dbgprintf("\tsourcetype='%s'\n", pData->sourcetype ? pData->sourcetype : "(null)");
-dbgprintf("\ttls=%d\n", pData->tls_enabled);
-dbgprintf("\ttls.verify=%d\n", pData->tls_verify);
-dbgprintf("\ttls.cacert='%s'\n", pData->tls_ca_file ? pData->tls_ca_file : "(null)");
-dbgprintf("\ttls.cert='%s'\n", pData->tls_cert_file ? pData->tls_cert_file : "(null)");
-dbgprintf("\ttls.key='%s'\n", pData->tls_key_file ? pData->tls_key_file : "(null)");
-ENDdbgPrintInstInfo
-
-    BEGINtryResume CODESTARTtryResume pthread_mutex_lock(&pWrkrData->pData->mtx);
-iRet = ensure_connected(pWrkrData->pData) == 0 ? RS_RET_OK : RS_RET_SUSPENDED;
-pthread_mutex_unlock(&pWrkrData->pData->mtx);
-ENDtryResume
-
-    BEGINdoAction instanceData *pData;
-s2s_event_t event;
-s2s_error_t err;
-CODESTARTdoAction pData = pWrkrData->pData;
-
-/* Validate message */
-if (ppString[0] == NULL) {
-    ABORT_FINALIZE(RS_RET_INVALID_PARAMS);
+    /* ENDcreateInstance */
+    *ppData = pData;
+    return iRet;
 }
 
-pthread_mutex_lock(&pData->mtx);
+/* BEGINcreateWrkrInstance - Creates function: static rsRetVal createWrkrInstance(wrkrInstanceData_t **ppWrkrData,
+ * instanceData *pData) */
+static rsRetVal createWrkrInstance(wrkrInstanceData_t **ppWrkrData, instanceData *pData) {
+    rsRetVal iRet = RS_RET_OK; /* DEFiRet */
+    wrkrInstanceData_t *pWrkrData;
+    /* CODESTARTcreateWrkrInstance */
 
-/* Ensure we have a connection */
-if (ensure_connected(pData) != 0) {
+    if ((pWrkrData = calloc(1, sizeof(wrkrInstanceData_t))) == NULL) {
+        *ppWrkrData = NULL;
+        return RS_RET_OUT_OF_MEMORY;
+    }
+    pWrkrData->pData = pData;
+
+    /* ENDcreateWrkrInstance */
+    *ppWrkrData = pWrkrData;
+    return iRet;
+}
+
+/* BEGINfreeInstance - Creates function: static rsRetVal freeInstance(void* pModData) */
+static rsRetVal freeInstance(void *pModData) {
+    rsRetVal iRet = RS_RET_OK; /* DEFiRet */
+    instanceData *pData;
+    /* CODESTARTfreeInstance */
+    pData = (instanceData *)pModData;
+
+    pthread_mutex_lock(&pData->mtx);
+    if (pData->conn != NULL) {
+        s2s_close(pData->conn);
+        pData->conn = NULL;
+    }
     pthread_mutex_unlock(&pData->mtx);
-    ABORT_FINALIZE(RS_RET_SUSPENDED);
+    pthread_mutex_destroy(&pData->mtx);
+    free(pData->server);
+    free(pData->index);
+    free(pData->host);
+    free(pData->source);
+    free(pData->sourcetype);
+    free(pData->tls_ca_file);
+    free(pData->tls_cert_file);
+    free(pData->tls_key_file);
+
+    /* ENDfreeInstance */
+    if (pData != NULL)
+        free(pData);
+    return iRet;
 }
 
-/* Build event */
-memset(&event, 0, sizeof(event));
-event.raw = (const char *)ppString[0];
-event.timestamp = 0; /* Use current time */
-event.host = pData->host;
-event.source = pData->source;
-event.sourcetype = pData->sourcetype;
-event.index = pData->index;
-event.field_count = 0;
+/* BEGINfreeWrkrInstance - Creates function: static rsRetVal freeWrkrInstance(void* pd) */
+static rsRetVal freeWrkrInstance(void *pd) {
+    rsRetVal iRet = RS_RET_OK; /* DEFiRet */
+    wrkrInstanceData_t *pWrkrData;
+    /* CODESTARTfreeWrkrInstance */
+    pWrkrData = (wrkrInstanceData_t *)pd;
 
-/* Add custom metadata fields from syslog */
-if (ppString[1] && ppString[1][0]) {
-    s2s_event_add_field(&event, "syslog_facility", (const char *)ppString[1]);
-}
-if (ppString[2] && ppString[2][0]) {
-    s2s_event_add_field(&event, "syslog_severity", (const char *)ppString[2]);
-}
-if (ppString[3] && ppString[3][0]) {
-    s2s_event_add_field(&event, "syslog_hostname", (const char *)ppString[3]);
-}
-if (ppString[4] && ppString[4][0]) {
-    s2s_event_add_field(&event, "syslog_program", (const char *)ppString[4]);
+    /* ENDfreeWrkrInstance */
+    if (pWrkrData != NULL)
+        free(pWrkrData);
+    return iRet;
 }
 
-/* Debug: log event details */
-dbgprintf("omsplunks2s: sending event: msg='%.100s', host='%s', source='%s', sourcetype='%s', index='%s', fields=%d\n",
-          event.raw ? event.raw : "(null)", event.host ? event.host : "(null)", event.source ? event.source : "(null)",
-          event.sourcetype ? event.sourcetype : "(null)", event.index ? event.index : "(null)", event.field_count);
+/* BEGINdbgPrintInstInfo - Creates function: static rsRetVal dbgPrintInstInfo(void *pModData) */
+static rsRetVal dbgPrintInstInfo(void *pModData) {
+    rsRetVal iRet = RS_RET_OK; /* DEFiRet */
+    instanceData *pData = NULL;
+    /* CODESTARTdbgPrintInstInfo */
+    pData = (instanceData *)pModData;
+    (void)pData; /* prevent compiler warning if unused! */
 
-/* Send event */
-err = s2s_send(pData->conn, &event);
-dbgprintf("omsplunks2s: s2s_send returned: %d (%s)\n", err, s2s_strerror(err));
+    dbgprintf("omsplunks2s:\n");
+    dbgprintf("\tserver='%s'\n", pData->server ? pData->server : "(null)");
+    dbgprintf("\tport=%d\n", pData->port);
+    dbgprintf("\tindex='%s'\n", pData->index ? pData->index : "(null)");
+    dbgprintf("\tsourcetype='%s'\n", pData->sourcetype ? pData->sourcetype : "(null)");
+    dbgprintf("\ttls=%d\n", pData->tls_enabled);
+    dbgprintf("\ttls.verify=%d\n", pData->tls_verify);
+    dbgprintf("\ttls.cacert='%s'\n", pData->tls_ca_file ? pData->tls_ca_file : "(null)");
+    dbgprintf("\ttls.cert='%s'\n", pData->tls_cert_file ? pData->tls_cert_file : "(null)");
+    dbgprintf("\ttls.key='%s'\n", pData->tls_key_file ? pData->tls_key_file : "(null)");
 
-if (err != S2S_OK) {
-    LogError(0, RS_RET_SUSPENDED, "omsplunks2s: send failed: %s", s2s_strerror(err));
-    s2s_close(pData->conn);
-    pData->conn = NULL;
+    /* ENDdbgPrintInstInfo */
+    return iRet;
+}
+
+/* BEGINtryResume - Creates function: static rsRetVal tryResume(wrkrInstanceData_t *pWrkrData) */
+static rsRetVal tryResume(wrkrInstanceData_t *pWrkrData) {
+    rsRetVal iRet = RS_RET_OK; /* DEFiRet */
+    /* CODESTARTtryResume */
+    assert(pWrkrData != NULL);
+
+    pthread_mutex_lock(&pWrkrData->pData->mtx);
+    iRet = ensure_connected(pWrkrData->pData) == 0 ? RS_RET_OK : RS_RET_SUSPENDED;
+    pthread_mutex_unlock(&pWrkrData->pData->mtx);
+
+    /* ENDtryResume */
+    return iRet;
+}
+
+/* BEGINdoAction - Creates function: static rsRetVal doAction(void * pMsgData, wrkrInstanceData_t *pWrkrData) */
+static rsRetVal doAction(void *pMsgData, wrkrInstanceData_t *pWrkrData) {
+    uchar **ppString = (uchar **)pMsgData;
+    rsRetVal iRet = RS_RET_OK; /* DEFiRet */
+    instanceData *pData;
+    s2s_event_t event;
+    s2s_error_t err;
+    /* CODESTARTdoAction - ppString may be NULL if the output module requested no strings */
+
+    pData = pWrkrData->pData;
+
+    /* Validate message */
+    if (ppString[0] == NULL) {
+        ABORT_FINALIZE(RS_RET_INVALID_PARAMS);
+    }
+
+    pthread_mutex_lock(&pData->mtx);
+
+    /* Ensure we have a connection */
+    if (ensure_connected(pData) != 0) {
+        pthread_mutex_unlock(&pData->mtx);
+        ABORT_FINALIZE(RS_RET_SUSPENDED);
+    }
+
+    /* Build event */
+    memset(&event, 0, sizeof(event));
+    event.raw = (const char *)ppString[0];
+    event.timestamp = 0; /* Use current time */
+    event.host = pData->host;
+    event.source = pData->source;
+    event.sourcetype = pData->sourcetype;
+    event.index = pData->index;
+    event.field_count = 0;
+
+    /* Add custom metadata fields from syslog */
+    if (ppString[1] && ppString[1][0]) {
+        s2s_event_add_field(&event, "syslog_facility", (const char *)ppString[1]);
+    }
+    if (ppString[2] && ppString[2][0]) {
+        s2s_event_add_field(&event, "syslog_severity", (const char *)ppString[2]);
+    }
+    if (ppString[3] && ppString[3][0]) {
+        s2s_event_add_field(&event, "syslog_hostname", (const char *)ppString[3]);
+    }
+    if (ppString[4] && ppString[4][0]) {
+        s2s_event_add_field(&event, "syslog_program", (const char *)ppString[4]);
+    }
+
+    /* Debug: log event details */
+    dbgprintf(
+        "omsplunks2s: sending event: msg='%.100s', host='%s', source='%s', sourcetype='%s', index='%s', fields=%d\n",
+        event.raw ? event.raw : "(null)", event.host ? event.host : "(null)", event.source ? event.source : "(null)",
+        event.sourcetype ? event.sourcetype : "(null)", event.index ? event.index : "(null)", event.field_count);
+
+    /* Send event */
+    err = s2s_send(pData->conn, &event);
+    dbgprintf("omsplunks2s: s2s_send returned: %d (%s)\n", err, s2s_strerror(err));
+
+    if (err != S2S_OK) {
+        LogError(0, RS_RET_SUSPENDED, "omsplunks2s: send failed: %s", s2s_strerror(err));
+        s2s_close(pData->conn);
+        pData->conn = NULL;
+        pthread_mutex_unlock(&pData->mtx);
+        ABORT_FINALIZE(RS_RET_SUSPENDED);
+    }
+
     pthread_mutex_unlock(&pData->mtx);
-    ABORT_FINALIZE(RS_RET_SUSPENDED);
+
+finalize_it: /* ENDdoAction */
+    return iRet;
 }
 
-pthread_mutex_unlock(&pData->mtx);
+/* BEGINisCompatibleWithFeature - Creates function: static rsRetVal isCompatibleWithFeature(syslogFeature eFeat) */
+static rsRetVal isCompatibleWithFeature(syslogFeature eFeat) {
+    rsRetVal iRet = RS_RET_INCOMPATIBLE;
+    /* CODESTARTisCompatibleWithFeature */
 
-finalize_it
-    : ENDdoAction
+    if (eFeat == sFEATURERepeatedMsgReduction)
+        iRet = RS_RET_OK;
 
-          BEGINisCompatibleWithFeature CODESTARTisCompatibleWithFeature if (eFeat == sFEATURERepeatedMsgReduction)
-              iRet = RS_RET_OK;
-ENDisCompatibleWithFeature
-
-    BEGINnewActInst struct cnfparamvals *pvals;
-int i;
-CODESTARTnewActInst if ((pvals = nvlstGetParams(lst, &actpblk, NULL)) == NULL) {
-    ABORT_FINALIZE(RS_RET_MISSING_CNFPARAMS);
+    /* ENDisCompatibleWithFeature */
+    return iRet;
 }
 
-CHKiRet(createInstance(&pData));
+/* BEGINnewActInst - Creates function: static rsRetVal newActInst(uchar *modName, struct nvlst *lst, void **ppModData,
+ * omodStringRequest_t **ppOMSR) */
+static rsRetVal newActInst(uchar __attribute__((unused)) * modName, struct nvlst __attribute__((unused)) * lst,
+                           void **ppModData, omodStringRequest_t **ppOMSR) {
+    rsRetVal iRet = RS_RET_OK; /* DEFiRet */
+    instanceData *pData = NULL;
+    *ppOMSR = NULL;
+    struct cnfparamvals *pvals;
+    int i;
+    /* CODESTARTnewActInst */
 
-CODE_STD_STRING_REQUESTnewActInst(5)
+    if ((pvals = nvlstGetParams(lst, &actpblk, NULL)) == NULL) {
+        iRet = RS_RET_MISSING_CNFPARAMS; /* ABORT_FINALIZE */
+        goto finalize_it;
+    }
+
+    if ((iRet = createInstance(&pData)) != RS_RET_OK) /* CHKiRet */
+        goto finalize_it;
+
+    /* CODE_STD_STRING_REQUESTnewActInst(5) - Constructs OMSR with 5 template slots */
+    if ((iRet = OMSRconstruct(ppOMSR, 5)) != RS_RET_OK)
+        goto finalize_it;
 
     for (i = 0; i < actpblk.nParams; ++i) {
-    if (!pvals[i].bUsed)
-        continue;
-    if (!strcmp(actpblk.descr[i].name, "server")) {
-        pData->server = es_str2cstr(pvals[i].val.d.estr, NULL);
-    } else if (!strcmp(actpblk.descr[i].name, "port")) {
-        pData->port = pvals[i].val.d.n;
-    } else if (!strcmp(actpblk.descr[i].name, "index")) {
-        pData->index = es_str2cstr(pvals[i].val.d.estr, NULL);
-    } else if (!strcmp(actpblk.descr[i].name, "host")) {
-        pData->host = es_str2cstr(pvals[i].val.d.estr, NULL);
-    } else if (!strcmp(actpblk.descr[i].name, "source")) {
-        pData->source = es_str2cstr(pvals[i].val.d.estr, NULL);
-    } else if (!strcmp(actpblk.descr[i].name, "sourcetype")) {
-        pData->sourcetype = es_str2cstr(pvals[i].val.d.estr, NULL);
-    } else if (!strcmp(actpblk.descr[i].name, "reconnect.interval")) {
-        pData->reconnect_interval = pvals[i].val.d.n;
-    } else if (!strcmp(actpblk.descr[i].name, "tls")) {
-        pData->tls_enabled = pvals[i].val.d.n;
-    } else if (!strcmp(actpblk.descr[i].name, "tls.verify")) {
-        pData->tls_verify = pvals[i].val.d.n;
-    } else if (!strcmp(actpblk.descr[i].name, "tls.cacert")) {
-        pData->tls_ca_file = es_str2cstr(pvals[i].val.d.estr, NULL);
-    } else if (!strcmp(actpblk.descr[i].name, "tls.cert")) {
-        pData->tls_cert_file = es_str2cstr(pvals[i].val.d.estr, NULL);
-    } else if (!strcmp(actpblk.descr[i].name, "tls.key")) {
-        pData->tls_key_file = es_str2cstr(pvals[i].val.d.estr, NULL);
-    } else {
-        dbgprintf("omsplunks2s: program error, non-handled param '%s'\n", actpblk.descr[i].name);
+        if (!pvals[i].bUsed)
+            continue;
+        if (!strcmp(actpblk.descr[i].name, "server")) {
+            pData->server = es_str2cstr(pvals[i].val.d.estr, NULL);
+        } else if (!strcmp(actpblk.descr[i].name, "port")) {
+            pData->port = pvals[i].val.d.n;
+        } else if (!strcmp(actpblk.descr[i].name, "index")) {
+            pData->index = es_str2cstr(pvals[i].val.d.estr, NULL);
+        } else if (!strcmp(actpblk.descr[i].name, "host")) {
+            pData->host = es_str2cstr(pvals[i].val.d.estr, NULL);
+        } else if (!strcmp(actpblk.descr[i].name, "source")) {
+            pData->source = es_str2cstr(pvals[i].val.d.estr, NULL);
+        } else if (!strcmp(actpblk.descr[i].name, "sourcetype")) {
+            pData->sourcetype = es_str2cstr(pvals[i].val.d.estr, NULL);
+        } else if (!strcmp(actpblk.descr[i].name, "reconnect.interval")) {
+            pData->reconnect_interval = pvals[i].val.d.n;
+        } else if (!strcmp(actpblk.descr[i].name, "tls")) {
+            pData->tls_enabled = pvals[i].val.d.n;
+        } else if (!strcmp(actpblk.descr[i].name, "tls.verify")) {
+            pData->tls_verify = pvals[i].val.d.n;
+        } else if (!strcmp(actpblk.descr[i].name, "tls.cacert")) {
+            pData->tls_ca_file = es_str2cstr(pvals[i].val.d.estr, NULL);
+        } else if (!strcmp(actpblk.descr[i].name, "tls.cert")) {
+            pData->tls_cert_file = es_str2cstr(pvals[i].val.d.estr, NULL);
+        } else if (!strcmp(actpblk.descr[i].name, "tls.key")) {
+            pData->tls_key_file = es_str2cstr(pvals[i].val.d.estr, NULL);
+        } else {
+            dbgprintf("omsplunks2s: program error, non-handled param '%s'\n", actpblk.descr[i].name);
+        }
     }
+
+    /* Validate required parameters */
+    if (pData->server == NULL || pData->server[0] == '\0') {
+        parser_errmsg("omsplunks2s: 'server' parameter is required");
+        ABORT_FINALIZE(RS_RET_CONFIG_ERROR);
+    }
+
+    /* Set defaults */
+    if (pData->sourcetype == NULL) {
+        pData->sourcetype = strdup("syslog");
+    }
+
+    /* Setup templates - message + metadata fields (max 5 due to rsyslog limit) */
+    /* Template 0: Raw message */
+    if ((iRet = OMSRsetEntry(*ppOMSR, 0, (uchar *)strdup(" SPLUNK_S2S_RAWMSG"), OMSR_NO_RQD_TPL_OPTS)) != RS_RET_OK)
+        goto finalize_it;
+    /* Template 1: syslog facility */
+    if ((iRet = OMSRsetEntry(*ppOMSR, 1, (uchar *)strdup(" SPLUNK_S2S_FACILITY"), OMSR_NO_RQD_TPL_OPTS)) != RS_RET_OK)
+        goto finalize_it;
+    /* Template 2: syslog severity */
+    if ((iRet = OMSRsetEntry(*ppOMSR, 2, (uchar *)strdup(" SPLUNK_S2S_SEVERITY"), OMSR_NO_RQD_TPL_OPTS)) != RS_RET_OK)
+        goto finalize_it;
+    /* Template 3: hostname */
+    if ((iRet = OMSRsetEntry(*ppOMSR, 3, (uchar *)strdup(" SPLUNK_S2S_HOSTNAME"), OMSR_NO_RQD_TPL_OPTS)) != RS_RET_OK)
+        goto finalize_it;
+    /* Template 4: program name */
+    if ((iRet = OMSRsetEntry(*ppOMSR, 4, (uchar *)strdup(" SPLUNK_S2S_PROGRAM"), OMSR_NO_RQD_TPL_OPTS)) != RS_RET_OK)
+        goto finalize_it;
+
+/* CODE_STD_FINALIZERnewActInst - Cleanup and return logic */
+finalize_it:
+    if (iRet == RS_RET_OK || iRet == RS_RET_SUSPENDED) {
+        *ppModData = pData;
+    } else {
+        /* cleanup, we failed */
+        if (*ppOMSR != NULL) {
+            OMSRdestruct(*ppOMSR);
+            *ppOMSR = NULL;
+        }
+        if (pData != NULL) {
+            freeInstance(pData);
+        }
+    }
+    cnfparamvalsDestruct(pvals, &actpblk);
+    /* ENDnewActInst */
+    return iRet;
 }
 
-/* Validate required parameters */
-if (pData->server == NULL || pData->server[0] == '\0') {
-    parser_errmsg("omsplunks2s: 'server' parameter is required");
-    ABORT_FINALIZE(RS_RET_CONFIG_ERROR);
-}
+/* BEGINparseSelectorAct - Creates function: static rsRetVal parseSelectorAct(uchar **pp, void **ppModData,
+ * omodStringRequest_t **ppOMSR) Legacy configuration is not supported - only new-style RainerScript config */
+static rsRetVal parseSelectorAct(uchar **pp, void **ppModData, omodStringRequest_t **ppOMSR) {
+    rsRetVal iRet = RS_RET_OK; /* DEFiRet */
+    uchar *p;
+    instanceData *pData = NULL;
+    /* CODESTARTparseSelectorAct */
+    assert(pp != NULL);
+    assert(ppModData != NULL);
+    assert(ppOMSR != NULL);
+    p = *pp;
 
-/* Set defaults */
-if (pData->sourcetype == NULL) {
-    pData->sourcetype = strdup("syslog");
-}
+    /* CODE_STD_STRING_REQUESTparseSelectorAct(1) */
+    if ((iRet = OMSRconstruct(ppOMSR, 1)) != RS_RET_OK)
+        goto finalize_it;
 
-/* Setup templates - message + metadata fields (max 5 due to rsyslog limit) */
-/* Template 0: Raw message */
-CHKiRet(OMSRsetEntry(*ppOMSR, 0, (uchar *)strdup(" SPLUNK_S2S_RAWMSG"), OMSR_NO_RQD_TPL_OPTS));
-/* Template 1: syslog facility */
-CHKiRet(OMSRsetEntry(*ppOMSR, 1, (uchar *)strdup(" SPLUNK_S2S_FACILITY"), OMSR_NO_RQD_TPL_OPTS));
-/* Template 2: syslog severity */
-CHKiRet(OMSRsetEntry(*ppOMSR, 2, (uchar *)strdup(" SPLUNK_S2S_SEVERITY"), OMSR_NO_RQD_TPL_OPTS));
-/* Template 3: hostname */
-CHKiRet(OMSRsetEntry(*ppOMSR, 3, (uchar *)strdup(" SPLUNK_S2S_HOSTNAME"), OMSR_NO_RQD_TPL_OPTS));
-/* Template 4: program name */
-CHKiRet(OMSRsetEntry(*ppOMSR, 4, (uchar *)strdup(" SPLUNK_S2S_PROGRAM"), OMSR_NO_RQD_TPL_OPTS));
-
-CODE_STD_FINALIZERnewActInst cnfparamvalsDestruct(pvals, &actpblk);
-ENDnewActInst
-
-    BEGINparseSelectorAct CODESTARTparseSelectorAct CODE_STD_STRING_REQUESTparseSelectorAct(1)
     /* Legacy config not supported - use new-style config only */
-    ABORT_FINALIZE(RS_RET_CONFLINE_UNPROCESSED);
-CODE_STD_FINALIZERparseSelectorAct ENDparseSelectorAct
+    iRet = RS_RET_CONFLINE_UNPROCESSED; /* ABORT_FINALIZE */
+    goto finalize_it;
 
-    BEGINmodExit CODESTARTmodExit ENDmodExit
+/* CODE_STD_FINALIZERparseSelectorAct */
+finalize_it:
+    __attribute__((unused));
+    if (iRet == RS_RET_OK || iRet == RS_RET_OK_WARN || iRet == RS_RET_SUSPENDED) {
+        *ppModData = pData;
+        *pp = p;
+    } else {
+        /* cleanup, we failed */
+        if (*ppOMSR != NULL) {
+            OMSRdestruct(*ppOMSR);
+            *ppOMSR = NULL;
+        }
+        if (pData != NULL) {
+            freeInstance(pData);
+        }
+    }
+    /* ENDparseSelectorAct */
+    return iRet;
+}
 
-        BEGINqueryEtryPt CODESTARTqueryEtryPt CODEqueryEtryPt_STD_OMOD_QUERIES CODEqueryEtryPt_STD_OMOD8_QUERIES
-            CODEqueryEtryPt_STD_CONF2_OMOD_QUERIES ENDqueryEtryPt
+/* BEGINmodExit - Creates function: static rsRetVal modExit(void) */
+static rsRetVal modExit(void) {
+    rsRetVal iRet = RS_RET_OK; /* DEFiRet */
+    /* CODESTARTmodExit */
+    /* No cleanup needed */
+    /* ENDmodExit */
+    return iRet;
+}
 
-            BEGINmodInit() CODESTARTmodInit uchar *pTmp;
+/* BEGINqueryEtryPt - Standard module entry point query function */
+BEGINqueryEtryPt CODESTARTqueryEtryPt CODEqueryEtryPt_STD_OMOD_QUERIES CODEqueryEtryPt_STD_OMOD8_QUERIES
+    CODEqueryEtryPt_STD_CONF2_OMOD_QUERIES ENDqueryEtryPt
+
+    BEGINmodInit() CODESTARTmodInit uchar *pTmp;
 *ipIFVersProvided = CURR_MOD_IF_VERSION;
 CODEmodInit_QueryRegCFSLineHdlr
 
