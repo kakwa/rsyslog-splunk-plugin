@@ -55,14 +55,6 @@ MODULE_CNFNAME("omsplunks2s")
 /* Module static data */
 DEF_OMOD_STATIC_DATA
 
-/* Custom templates for S2S */
-#define SPLUNK_S2S_RAWMSG "\"%msg:2:$%\""
-#define SPLUNK_S2S_FACILITY "\"%syslogfacility-text%\""
-#define SPLUNK_S2S_SEVERITY "\"%syslogseverity-text%\""
-#define SPLUNK_S2S_HOSTNAME "\"%hostname%\""
-#define SPLUNK_S2S_PROGRAM "\"%programname%\""
-#define SPLUNK_S2S_PROCID "\"%procid%\""
-
 /* Instance configuration */
 typedef struct _instanceData {
     char *server;
@@ -325,7 +317,7 @@ static rsRetVal doAction(void *pMsgData, wrkrInstanceData_t *pWrkrData) {
 
     /* Add custom metadata fields from syslog */
     if (ppString[1] && ppString[1][0]) {
-        s2s_event_add_field(&event, "syslog_facility", (const char *)ppString[1]);
+        s2s_event_add_field(&event, "syslog_procid", (const char *)ppString[1]);
     }
     if (ppString[2] && ppString[2][0]) {
         s2s_event_add_field(&event, "syslog_severity", (const char *)ppString[2]);
@@ -336,6 +328,14 @@ static rsRetVal doAction(void *pMsgData, wrkrInstanceData_t *pWrkrData) {
     if (ppString[4] && ppString[4][0]) {
         s2s_event_add_field(&event, "syslog_program", (const char *)ppString[4]);
     }
+    //if (ppString[5] && ppString[5][0]) {
+    //    s2s_event_add_field(&event, "syslog_facility", (const char *)ppString[5]);
+    //}
+    //if (ppString[6] && ppString[6][0]) {
+    //    s2s_event_add_field(&event, "syslog_appname", (const char *)ppString[6]);
+    //}
+
+    s2s_event_add_field(&event, "rsyslog_plugin", "omsplunks2s");
 
     /* Debug: log event details */
     dbgprintf(
@@ -380,9 +380,13 @@ static rsRetVal newActInst(uchar __attribute__((unused)) * modName, struct nvlst
     rsRetVal iRet = RS_RET_OK; /* DEFiRet */
     instanceData *pData = NULL;
     *ppOMSR = NULL;
-    struct cnfparamvals *pvals;
+    struct cnfparamvals *pvals = NULL;
     int i;
     /* CODESTARTnewActInst */
+
+    /* CODE_STD_STRING_REQUESTnewActInst(5) - Constructs OMSR with 5 template slots, 5 is the max */
+    if ((iRet = OMSRconstruct(ppOMSR, 5)) != RS_RET_OK)
+        goto finalize_it;
 
     if ((pvals = nvlstGetParams(lst, &actpblk, NULL)) == NULL) {
         iRet = RS_RET_MISSING_CNFPARAMS; /* ABORT_FINALIZE */
@@ -390,10 +394,6 @@ static rsRetVal newActInst(uchar __attribute__((unused)) * modName, struct nvlst
     }
 
     if ((iRet = createInstance(&pData)) != RS_RET_OK) /* CHKiRet */
-        goto finalize_it;
-
-    /* CODE_STD_STRING_REQUESTnewActInst(5) - Constructs OMSR with 5 template slots */
-    if ((iRet = OMSRconstruct(ppOMSR, 5)) != RS_RET_OK)
         goto finalize_it;
 
     for (i = 0; i < actpblk.nParams; ++i) {
@@ -418,11 +418,11 @@ static rsRetVal newActInst(uchar __attribute__((unused)) * modName, struct nvlst
         } else if (!strcmp(actpblk.descr[i].name, "tls.verify")) {
             pData->tls_verify = pvals[i].val.d.n;
         } else if (!strcmp(actpblk.descr[i].name, "tls.cacert")) {
-            pData->tls_ca_file = es_str2cstr(pvals[i].val.d.estr, NULL);
+            pData->tls_ca_file = es_str2cstr(pvals[i].val.d.estr, "");
         } else if (!strcmp(actpblk.descr[i].name, "tls.cert")) {
-            pData->tls_cert_file = es_str2cstr(pvals[i].val.d.estr, NULL);
+            pData->tls_cert_file = es_str2cstr(pvals[i].val.d.estr, "");
         } else if (!strcmp(actpblk.descr[i].name, "tls.key")) {
-            pData->tls_key_file = es_str2cstr(pvals[i].val.d.estr, NULL);
+            pData->tls_key_file = es_str2cstr(pvals[i].val.d.estr, "");
         } else {
             dbgprintf("omsplunks2s: program error, non-handled param '%s'\n", actpblk.descr[i].name);
         }
@@ -439,22 +439,34 @@ static rsRetVal newActInst(uchar __attribute__((unused)) * modName, struct nvlst
         pData->sourcetype = strdup("syslog");
     }
 
-    /* Setup templates - message + metadata fields (max 5 due to rsyslog limit) */
+
+    dbgprintf("omsplunks2s: registering template SPLUNK_S2S_RAWMSG'\n");
+    /* Setup templates - message + metadata fields (max 7 due to rsyslog limit) */
     /* Template 0: Raw message */
     if ((iRet = OMSRsetEntry(*ppOMSR, 0, (uchar *)strdup(" SPLUNK_S2S_RAWMSG"), OMSR_NO_RQD_TPL_OPTS)) != RS_RET_OK)
         goto finalize_it;
     /* Template 1: syslog facility */
-    if ((iRet = OMSRsetEntry(*ppOMSR, 1, (uchar *)strdup(" SPLUNK_S2S_FACILITY"), OMSR_NO_RQD_TPL_OPTS)) != RS_RET_OK)
+    dbgprintf("omsplunks2s: registering template SPLUNK_S2S_PROCID'\n");
+    if ((iRet = OMSRsetEntry(*ppOMSR, 1, (uchar *)strdup(" SPLUNK_S2S_PROCID"), OMSR_NO_RQD_TPL_OPTS)) != RS_RET_OK)
         goto finalize_it;
     /* Template 2: syslog severity */
+    dbgprintf("omsplunks2s: registering template SPLUNK_S2S_SEVERITY'\n");
     if ((iRet = OMSRsetEntry(*ppOMSR, 2, (uchar *)strdup(" SPLUNK_S2S_SEVERITY"), OMSR_NO_RQD_TPL_OPTS)) != RS_RET_OK)
         goto finalize_it;
     /* Template 3: hostname */
+    dbgprintf("omsplunks2s: registering template SPLUNK_S2S_HOSTNAME'\n");
     if ((iRet = OMSRsetEntry(*ppOMSR, 3, (uchar *)strdup(" SPLUNK_S2S_HOSTNAME"), OMSR_NO_RQD_TPL_OPTS)) != RS_RET_OK)
         goto finalize_it;
     /* Template 4: program name */
+    dbgprintf("omsplunks2s: registering template SPLUNK_S2S_PROGRAM'\n");
     if ((iRet = OMSRsetEntry(*ppOMSR, 4, (uchar *)strdup(" SPLUNK_S2S_PROGRAM"), OMSR_NO_RQD_TPL_OPTS)) != RS_RET_OK)
         goto finalize_it;
+    //dbgprintf("omsplunks2s: registering template SPLUNK_S2S_FACILITY'\n");
+    //if ((iRet = OMSRsetEntry(*ppOMSR, 5, (uchar *)strdup(" SPLUNK_S2S_FACILITY"), OMSR_NO_RQD_TPL_OPTS)) != RS_RET_OK)
+    //    goto finalize_it;
+    //dbgprintf("omsplunks2s: registering template SPLUNK_S2S_APPNAME'\n");
+    //if ((iRet = OMSRsetEntry(*ppOMSR, 6, (uchar *)strdup(" SPLUNK_S2S_APPNAME"), OMSR_NO_RQD_TPL_OPTS)) != RS_RET_OK)
+    //    goto finalize_it;
 
 /* CODE_STD_FINALIZERnewActInst - Cleanup and return logic */
 finalize_it:
@@ -525,31 +537,51 @@ static rsRetVal modExit(void) {
 }
 
 /* BEGINqueryEtryPt - Standard module entry point query function */
-BEGINqueryEtryPt CODESTARTqueryEtryPt CODEqueryEtryPt_STD_OMOD_QUERIES CODEqueryEtryPt_STD_OMOD8_QUERIES
-    CODEqueryEtryPt_STD_CONF2_OMOD_QUERIES ENDqueryEtryPt
+BEGINqueryEtryPt // {
+    CODESTARTqueryEtryPt
+    CODEqueryEtryPt_STD_OMOD_QUERIES
+    CODEqueryEtryPt_STD_OMOD8_QUERIES
+    CODEqueryEtryPt_STD_CONF2_OMOD_QUERIES
+// }
+ENDqueryEtryPt
 
-    BEGINmodInit() CODESTARTmodInit uchar *pTmp;
-*ipIFVersProvided = CURR_MOD_IF_VERSION;
-CODEmodInit_QueryRegCFSLineHdlr
+/* Custom templates for S2S */
+/* rsyslog limit is 5 templates (CONF_OMOD_NUMSTRINGS_MAXSIZE in OMSRconstruct)*/
+#define SPLUNK_S2S_RAWMSG "\"%msg:2:$%\""
+#define SPLUNK_S2S_FACILITY "\"%syslogfacility-text%\""
+#define SPLUNK_S2S_SEVERITY "\"%syslogseverity-text%\""
+#define SPLUNK_S2S_PROGRAM "\"%programname%\""
+#define SPLUNK_S2S_PROCID "\"%procid%\""
+//#define SPLUNK_S2S_HOSTNAME "\"%hostname%\""
+//#define SPLUNK_S2S_APPNAME "\"%app-name%\""
 
-    /* Register custom templates */
-    DBGPRINTF("omsplunks2s: registering custom templates\n");
+BEGINmodInit() // {
+  CODESTARTmodInit uchar *pTmp;
+  *ipIFVersProvided = CURR_MOD_IF_VERSION;
+  CODEmodInit_QueryRegCFSLineHdlr;
 
-pTmp = (uchar *)SPLUNK_S2S_RAWMSG;
-tplAddLine(ourConf, " SPLUNK_S2S_RAWMSG", &pTmp);
+  /* Register custom templates */
+  DBGPRINTF("omsplunks2s: registering custom templates\n");
 
-pTmp = (uchar *)SPLUNK_S2S_FACILITY;
-tplAddLine(ourConf, " SPLUNK_S2S_FACILITY", &pTmp);
+  pTmp = (uchar *)SPLUNK_S2S_RAWMSG;
+  tplAddLine(ourConf, " SPLUNK_S2S_RAWMSG", &pTmp);
 
-pTmp = (uchar *)SPLUNK_S2S_SEVERITY;
-tplAddLine(ourConf, " SPLUNK_S2S_SEVERITY", &pTmp);
+  pTmp = (uchar *)SPLUNK_S2S_SEVERITY;
+  tplAddLine(ourConf, " SPLUNK_S2S_SEVERITY", &pTmp);
 
-pTmp = (uchar *)SPLUNK_S2S_HOSTNAME;
-tplAddLine(ourConf, " SPLUNK_S2S_HOSTNAME", &pTmp);
+  pTmp = (uchar *)SPLUNK_S2S_HOSTNAME;
+  tplAddLine(ourConf, " SPLUNK_S2S_HOSTNAME", &pTmp);
 
-pTmp = (uchar *)SPLUNK_S2S_PROGRAM;
-tplAddLine(ourConf, " SPLUNK_S2S_PROGRAM", &pTmp);
+  pTmp = (uchar *)SPLUNK_S2S_PROGRAM;
+  tplAddLine(ourConf, " SPLUNK_S2S_PROGRAM", &pTmp);
 
-pTmp = (uchar *)SPLUNK_S2S_PROCID;
-tplAddLine(ourConf, " SPLUNK_S2S_PROCID", &pTmp);
+  pTmp = (uchar *)SPLUNK_S2S_PROCID;
+  tplAddLine(ourConf, " SPLUNK_S2S_PROCID", &pTmp);
+
+//  pTmp = (uchar *)SPLUNK_S2S_FACILITY;
+//  tplAddLine(ourConf, " SPLUNK_S2S_FACILITY", &pTmp);
+
+//  pTmp = (uchar *)SPLUNK_S2S_APPNAME;
+//  tplAddLine(ourConf, " SPLUNK_S2S_APPNAME", &pTmp);
+// }
 ENDmodInit
