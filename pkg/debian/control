@@ -8,6 +8,7 @@ Build-Depends:
  libssl-dev,
  libestr-dev,
  libjson-c-dev,
+ zlib1g-dev,
  make
 Standards-Version: 3.8.4
 Homepage: @URL@ 

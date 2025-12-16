@@ -143,6 +143,13 @@ if(BUILD_RSYSLOG_PLUGIN AND NOT USE_SYSTEM_RSYSLOG)
     pkg_check_modules(JSON_C json-c)
     if(JSON_C_FOUND)
       message(STATUS "json-c found: ${JSON_C_VERSION}")
+      # Add json-c subdirectory to include path for rsyslog headers that use
+      # <json.h>
+      set(JSON_C_EXTRA_DIRS "")
+      foreach(dir ${JSON_C_INCLUDE_DIRS})
+        list(APPEND JSON_C_EXTRA_DIRS "${dir}/json-c")
+      endforeach()
+      list(APPEND JSON_C_INCLUDE_DIRS ${JSON_C_EXTRA_DIRS})
       message(STATUS "json-c include: ${JSON_C_INCLUDE_DIRS}")
     endif()
   endif()
@@ -152,7 +159,10 @@ if(BUILD_RSYSLOG_PLUGIN AND NOT USE_SYSTEM_RSYSLOG)
     find_path(JSON_C_INCLUDE_DIR json-c/json.h PATHS /usr/include
                                                      /usr/local/include)
     if(JSON_C_INCLUDE_DIR)
-      set(JSON_C_INCLUDE_DIRS ${JSON_C_INCLUDE_DIR})
+      # Add both the base directory and json-c subdirectory to the include path
+      # rsyslog headers may use <json.h> directly
+      set(JSON_C_INCLUDE_DIRS ${JSON_C_INCLUDE_DIR}
+                              ${JSON_C_INCLUDE_DIR}/json-c)
       message(STATUS "json-c include: ${JSON_C_INCLUDE_DIRS}")
     else()
       message(
