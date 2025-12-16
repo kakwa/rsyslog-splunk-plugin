@@ -56,7 +56,7 @@ MODULE_CNFNAME("omsplunks2s")
 DEF_OMOD_STATIC_DATA
 
 /* Custom templates for S2S */
-#define SPLUNK_S2S_RAWMSG "\"%msg%\""
+#define SPLUNK_S2S_RAWMSG "\"%msg:2:$%\""
 #define SPLUNK_S2S_FACILITY "\"%syslogfacility-text%\""
 #define SPLUNK_S2S_SEVERITY "\"%syslogseverity-text%\""
 #define SPLUNK_S2S_HOSTNAME "\"%hostname%\""
