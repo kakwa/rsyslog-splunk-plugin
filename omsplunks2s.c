@@ -548,11 +548,11 @@ ENDqueryEtryPt
 /* Custom templates for S2S */
 /* rsyslog limit is 5 templates (CONF_OMOD_NUMSTRINGS_MAXSIZE in OMSRconstruct)*/
 #define SPLUNK_S2S_RAWMSG "\"%msg:2:$%\""
-#define SPLUNK_S2S_FACILITY "\"%syslogfacility-text%\""
+//#define SPLUNK_S2S_FACILITY "\"%syslogfacility-text%\""
 #define SPLUNK_S2S_SEVERITY "\"%syslogseverity-text%\""
 #define SPLUNK_S2S_PROGRAM "\"%programname%\""
 #define SPLUNK_S2S_PROCID "\"%procid%\""
-//#define SPLUNK_S2S_HOSTNAME "\"%hostname%\""
+#define SPLUNK_S2S_HOSTNAME "\"%hostname%\""
 //#define SPLUNK_S2S_APPNAME "\"%app-name%\""
 
 BEGINmodInit() // {
