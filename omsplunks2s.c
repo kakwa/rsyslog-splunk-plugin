@@ -90,11 +90,10 @@ typedef struct wrkrInstanceData {
 
 /* Configuration parameters */
 static struct cnfparamdescr actpdescr[] = {
-    {"server", eCmdHdlrGetWord, 0},         {"port", eCmdHdlrInt, 0},           {"index", eCmdHdlrGetWord, 0},
-    {"host", eCmdHdlrGetWord, 0},           {"source", eCmdHdlrGetWord, 0},     {"sourcetype", eCmdHdlrGetWord, 0},
-    {"reconnect.interval", eCmdHdlrInt, 0}, {"template", eCmdHdlrGetWord, 0},   {"tls", eCmdHdlrBinary, 0},
-    {"tls.verify", eCmdHdlrBinary, 0},      {"tls.cacert", eCmdHdlrGetWord, 0}, {"tls.cert", eCmdHdlrGetWord, 0},
-    {"tls.key", eCmdHdlrGetWord, 0},
+    {"server", eCmdHdlrGetWord, 0},         {"port", eCmdHdlrInt, 0},         {"index", eCmdHdlrGetWord, 0},
+    {"host", eCmdHdlrGetWord, 0},           {"source", eCmdHdlrGetWord, 0},   {"sourcetype", eCmdHdlrGetWord, 0},
+    {"reconnect.interval", eCmdHdlrInt, 0}, {"tls", eCmdHdlrBinary, 0},       {"tls.verify", eCmdHdlrBinary, 0},
+    {"tls.cacert", eCmdHdlrGetWord, 0},     {"tls.cert", eCmdHdlrGetWord, 0}, {"tls.key", eCmdHdlrGetWord, 0},
 };
 static struct cnfparamblk actpblk = {CNFPARAMBLK_VERSION, sizeof(actpdescr) / sizeof(struct cnfparamdescr), actpdescr};
 
@@ -258,9 +257,6 @@ if (ppString[3] && ppString[3][0]) {
 if (ppString[4] && ppString[4][0]) {
     s2s_event_add_field(&event, "syslog_program", (const char *)ppString[4]);
 }
-if (ppString[5] && ppString[5][0]) {
-    s2s_event_add_field(&event, "syslog_pid", (const char *)ppString[5]);
-}
 
 /* Debug: log event details */
 dbgprintf("omsplunks2s: sending event: msg='%.100s', host='%s', source='%s', sourcetype='%s', index='%s', fields=%d\n",
@@ -296,7 +292,9 @@ CODESTARTnewActInst if ((pvals = nvlstGetParams(lst, &actpblk, NULL)) == NULL) {
 
 CHKiRet(createInstance(&pData));
 
-for (i = 0; i < actpblk.nParams; ++i) {
+CODE_STD_STRING_REQUESTnewActInst(5)
+
+    for (i = 0; i < actpblk.nParams; ++i) {
     if (!pvals[i].bUsed)
         continue;
     if (!strcmp(actpblk.descr[i].name, "server")) {
@@ -339,10 +337,9 @@ if (pData->sourcetype == NULL) {
     pData->sourcetype = strdup("syslog");
 }
 
-/* Setup templates - message + metadata fields */
-CODE_STD_STRING_REQUESTnewActInst(6)
-    /* Template 0: Main message template */
-    CHKiRet(OMSRsetEntry(*ppOMSR, 0, (uchar *)strdup(" SPLUNK_S2S_RAWMSG"), OMSR_NO_RQD_TPL_OPTS));
+/* Setup templates - message + metadata fields (max 5 due to rsyslog limit) */
+/* Template 0: Raw message */
+CHKiRet(OMSRsetEntry(*ppOMSR, 0, (uchar *)strdup(" SPLUNK_S2S_RAWMSG"), OMSR_NO_RQD_TPL_OPTS));
 /* Template 1: syslog facility */
 CHKiRet(OMSRsetEntry(*ppOMSR, 1, (uchar *)strdup(" SPLUNK_S2S_FACILITY"), OMSR_NO_RQD_TPL_OPTS));
 /* Template 2: syslog severity */
@@ -351,13 +348,6 @@ CHKiRet(OMSRsetEntry(*ppOMSR, 2, (uchar *)strdup(" SPLUNK_S2S_SEVERITY"), OMSR_N
 CHKiRet(OMSRsetEntry(*ppOMSR, 3, (uchar *)strdup(" SPLUNK_S2S_HOSTNAME"), OMSR_NO_RQD_TPL_OPTS));
 /* Template 4: program name */
 CHKiRet(OMSRsetEntry(*ppOMSR, 4, (uchar *)strdup(" SPLUNK_S2S_PROGRAM"), OMSR_NO_RQD_TPL_OPTS));
-/* Template 5: process ID */
-CHKiRet(OMSRsetEntry(*ppOMSR, 5, (uchar *)strdup(" SPLUNK_S2S_PROCID"), OMSR_NO_RQD_TPL_OPTS));
-
-/* Attempt initial connection */
-if (do_connect(pData, 1) != 0) {
-    dbgprintf("omsplunks2s: initial connection failed, will retry\n");
-}
 
 CODE_STD_FINALIZERnewActInst cnfparamvalsDestruct(pvals, &actpblk);
 ENDnewActInst
