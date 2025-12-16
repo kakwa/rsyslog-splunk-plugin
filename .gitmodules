@@ -1,0 +1,3 @@
+[submodule "deps/rsyslog"]
+	path = deps/rsyslog
+	url = https://github.com/rsyslog/rsyslog.git
