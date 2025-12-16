@@ -565,7 +565,8 @@ ENDqueryEtryPt
 //#define SPLUNK_S2S_APPNAME "\"%app-name%\""
 
 BEGINmodInit() // {
-  CODESTARTmodInit uchar *pTmp;
+  CODESTARTmodInit;
+  uchar *pTmp;
   *ipIFVersProvided = CURR_MOD_IF_VERSION;
   CODEmodInit_QueryRegCFSLineHdlr;
 
