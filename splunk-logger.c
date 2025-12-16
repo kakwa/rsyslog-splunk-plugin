@@ -24,6 +24,7 @@ static void usage(const char *progname) {
     fprintf(stderr, "  -i, --index=INDEX        Target Splunk index\n");
     fprintf(stderr, "  -s, --source=SOURCE      Source field\n");
     fprintf(stderr, "  -t, --sourcetype=TYPE    Sourcetype field (default: syslog)\n");
+    fprintf(stderr, "  -f, --field=KEY=VALUE    Add custom field (can be used multiple times)\n");
     fprintf(stderr, "  -T, --tls                Enable TLS encryption\n");
     fprintf(stderr, "  -V, --tls-verify         Enable TLS certificate verification\n");
     fprintf(stderr, "      --tls-no-verify      Disable TLS certificate verification\n");
@@ -34,6 +35,7 @@ static void usage(const char *progname) {
     fprintf(stderr, "\nExamples:\n");
     fprintf(stderr, "  %s -H splunk.example.com \"Test message\"\n", progname);
     fprintf(stderr, "  %s -H 192.168.1.100 -i main -t syslog \"Error occurred\"\n", progname);
+    fprintf(stderr, "  %s -H splunk.local -f severity=high -f app=myapp \"Alert message\"\n", progname);
     fprintf(stderr, "  %s -H splunk.local -T -V --ca-file=/etc/ssl/ca.pem \"Secure message\"\n", progname);
     fprintf(stderr, "  echo \"Log entry\" | %s -H splunk.local\n", progname);
     fprintf(stderr, "\n");
@@ -53,6 +55,10 @@ int main(int argc, char *argv[]) {
     const char *cert_file = NULL;
     const char *key_file = NULL;
 
+    /* Storage for custom fields */
+    const char *custom_fields[S2S_MAX_FIELDS];
+    int custom_field_count = 0;
+
     s2s_tls_config_t tls_config;
     s2s_conn_t *conn = NULL;
     s2s_event_t event = {0};
@@ -64,6 +70,7 @@ int main(int argc, char *argv[]) {
                                            {"index", required_argument, 0, 'i'},
                                            {"source", required_argument, 0, 's'},
                                            {"sourcetype", required_argument, 0, 't'},
+                                           {"field", required_argument, 0, 'f'},
                                            {"tls", no_argument, 0, 'T'},
                                            {"tls-verify", no_argument, 0, 'V'},
                                            {"tls-no-verify", no_argument, 0, 'N'},
@@ -77,7 +84,7 @@ int main(int argc, char *argv[]) {
     int opt;
     int option_index = 0;
 
-    while ((opt = getopt_long(argc, argv, "H:p:i:s:t:TVh", long_options, &option_index)) != -1) {
+    while ((opt = getopt_long(argc, argv, "H:p:i:s:t:f:TVh", long_options, &option_index)) != -1) {
         switch (opt) {
         case 'H':
             host = optarg;
@@ -97,6 +104,18 @@ int main(int argc, char *argv[]) {
             break;
         case 't':
             sourcetype = optarg;
+            break;
+        case 'f':
+            if (custom_field_count >= S2S_MAX_FIELDS) {
+                fprintf(stderr, "Error: Too many custom fields (max: %d)\n", S2S_MAX_FIELDS);
+                return 1;
+            }
+            /* Validate field format (key=value) */
+            if (strchr(optarg, '=') == NULL) {
+                fprintf(stderr, "Error: Invalid field format '%s' (expected: key=value)\n", optarg);
+                return 1;
+            }
+            custom_fields[custom_field_count++] = optarg;
             break;
         case 'T':
             use_tls = 1;
@@ -215,6 +234,46 @@ int main(int argc, char *argv[]) {
     event.sourcetype = sourcetype;
     event.index = index;
 
+    /* Add custom fields */
+    for (int i = 0; i < custom_field_count; i++) {
+        /* Parse field (format: key=value) */
+        char *field_copy = strdup(custom_fields[i]);
+        if (field_copy == NULL) {
+            fprintf(stderr, "Error: Out of memory\n");
+            s2s_close(conn);
+            if (use_tls) {
+                s2s_tls_cleanup();
+            }
+            return 1;
+        }
+
+        char *equals = strchr(field_copy, '=');
+        if (equals == NULL) {
+            /* Should not happen as we validated earlier */
+            fprintf(stderr, "Error: Invalid field format\n");
+            free(field_copy);
+            s2s_close(conn);
+            if (use_tls) {
+                s2s_tls_cleanup();
+            }
+            return 1;
+        }
+
+        *equals = '\0';
+        const char *key = field_copy;
+        const char *value = equals + 1;
+
+        fprintf(stderr, "Adding field '%s' with value '%s'\n", key, value);
+        if (s2s_event_add_field(&event, key, value) != 0) {
+            s2s_close(conn);
+            if (use_tls) {
+                s2s_tls_cleanup();
+            }
+            return 1;
+        }
+
+    }
+
     /* Send event */
     fprintf(stderr, "Sending message...\n");
     err = s2s_send(conn, &event);
@@ -239,6 +298,12 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "  Index:      %s\n", event.index);
     }
     fprintf(stderr, "  Timestamp:  %ld\n", (long)event.timestamp);
+    if (event.field_count > 0) {
+        fprintf(stderr, "  Fields:\n");
+        for (int i = 0; i < event.field_count; i++) {
+            fprintf(stderr, "    %s: %s\n", event.fields[i].key, event.fields[i].value);
+        }
+    }
     fprintf(stderr, "  Message:    %s\n", event.raw);
 
     /* Cleanup */

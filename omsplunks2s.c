@@ -339,9 +339,14 @@ static rsRetVal doAction(void *pMsgData, wrkrInstanceData_t *pWrkrData) {
 
     /* Debug: log event details */
     dbgprintf(
-        "omsplunks2s: sending event: msg='%.100s', host='%s', source='%s', sourcetype='%s', index='%s', fields=%d\n",
+        "omsplunks2s: sending event: msg='%.100s', host='%s', source='%s', sourcetype='%s', index='%s', fields=%d "
+        "[syslog_procid='%s', syslog_severity='%s', syslog_hostname='%s', syslog_program='%s', rsyslog_plugin='omsplunks2s']\n",
         event.raw ? event.raw : "(null)", event.host ? event.host : "(null)", event.source ? event.source : "(null)",
-        event.sourcetype ? event.sourcetype : "(null)", event.index ? event.index : "(null)", event.field_count);
+        event.sourcetype ? event.sourcetype : "(null)", event.index ? event.index : "(null)", event.field_count,
+        (ppString[1] && ppString[1][0]) ? (const char *)ppString[1] : "(null)",
+        (ppString[2] && ppString[2][0]) ? (const char *)ppString[2] : "(null)",
+        (ppString[3] && ppString[3][0]) ? (const char *)ppString[3] : "(null)",
+        (ppString[4] && ppString[4][0]) ? (const char *)ppString[4] : "(null)");
 
     /* Send event */
     err = s2s_send(pData->conn, &event);
