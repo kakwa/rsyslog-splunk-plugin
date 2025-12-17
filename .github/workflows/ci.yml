@@ -25,8 +25,11 @@ jobs:
         
     - name: Install dependencies
       run: |
-        sudo apt-get update
-        sudo apt-get install -y \
+        sudo apt update
+        sudo apt install -y \
+          libestr-dev \
+          zlib1g-dev \
+          make \
           build-essential \
           cmake \
           libssl-dev \
@@ -106,13 +109,18 @@ jobs:
         
     - name: Install dependencies
       run: |
-        sudo apt-get update
-        sudo apt-get install -y \
+        sudo apt update
+        sudo apt install -y \
+          libestr-dev \
+          zlib1g-dev \
+          make \
           build-essential \
           cmake \
           libssl-dev \
-          libjson-c-dev
-          
+          libjson-c-dev \
+          lcov \
+          git
+         
     - name: Build release version
       run: |
         mkdir -p build-release
@@ -146,9 +154,14 @@ jobs:
         
     - name: Install dependencies
       run: |
-        sudo apt-get update
-        sudo apt-get install -y \
+        sudo apt update
+        sudo apt install -y \
           build-essential \
+          libestr-dev \
+          zlib1g-dev \
+          make \
+          lcov \
+          git \
           cmake \
           libssl-dev \
           libjson-c-dev \
