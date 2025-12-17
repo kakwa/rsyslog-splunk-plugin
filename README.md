@@ -4,9 +4,13 @@ rsyslog output module for Splunk using the native Splunk-to-Splunk (S2S) protoco
 
 Protocol implementation based on [go-s2s](https://github.com/mikedickey/go-s2s) from mike [at] mikedickey.com.
 
+Also provides a single `logger`-style cli utility to push message in splunk on-demand.
+
 # Disclaimer
 
-This implementation is fairly limited (custom fields not working, no compression, partial s2s support) and has been mostly vibe coded. It 's working however, and miles better than installing the universal forwarder if you have basic needs.
+This implementation is fairly limited (custom fields not working, no compression, partial s2s protocol support) and has been mostly vibe coded.
+
+However, it's working, and is way simpler to deploy compared to the universal forwarder if you have basic needs.
 
 # Build
 
@@ -35,22 +39,6 @@ git submodule update --init --recursive
 cmake .
 make
 sudo make install
-```
-
-### Build Debian Package
-
-To build a `.deb` package for Debian or Ubuntu:
-
-```bash
-# Install additional packaging dependencies
-sudo apt-get install debhelper pbuilder
-
-# Build package for Debian Trixie
-cd pkg
-make deb_chroot DIST=trixie
-
-# Output packages will be in pkg/out/
-# - rsyslog-splunk-plugin_*.deb (main package)
 ```
 
 ### Installation Locations
@@ -126,7 +114,7 @@ module(load="omsplunks2s")
 )
 ```
 
-## Parameters
+### Parameters
 
 | Parameter            | Required | Default         | Description                               |
 |----------------------|----------|-----------------|-------------------------------------------|
@@ -165,7 +153,7 @@ echo "Log entry" | splunk-logger -H splunk.example.com
 
 ### CLI Options
 
-```
+```bash
 Usage: splunk-logger [OPTIONS] <message>
 
 Send a single message to Splunk indexer via S2S protocol.
@@ -195,8 +183,9 @@ Examples:
   echo "Log entry" | splunk-logger -H splunk.local
 ```
 
+## Misc
 
-## Build Options
+### Build Options
 
 ```bash
 cmake -DBUILD_RSYSLOG_PLUGIN=ON \
@@ -217,6 +206,22 @@ cmake -DBUILD_RSYSLOG_PLUGIN=ON \
 - `BUILD_TESTS` - Build test programs (default: OFF)
 - `DEBUG` - Enable debug build with symbols (default: OFF)
 - `RSYSLOG_MODDIR` - Custom rsyslog module install directory
+
+### Build Debian Package
+
+To build a `.deb` package for Debian or Ubuntu:
+
+```bash
+# Install additional packaging dependencies
+sudo apt-get install debhelper pbuilder
+
+# Build package for Debian Trixie
+cd pkg
+make deb_chroot DIST=trixie
+
+# Output packages will be in pkg/out/
+# - rsyslog-splunk-plugin_*.deb (main package)
+```
 
 ## License
 
