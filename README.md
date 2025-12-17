@@ -1,5 +1,8 @@
 # rsyslog-splunk-plugin
 
+[![CI](https://github.com/kakwa/rsyslog-splunk-plugin/actions/workflows/ci.yml/badge.svg)](https://github.com/kakwa/rsyslog-splunk-plugin/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/kakwa/rsyslog-splunk-plugin/branch/master/graph/badge.svg)](https://codecov.io/gh/kakwa/rsyslog-splunk-plugin)
+
 rsyslog output module for Splunk using the native Splunk-to-Splunk (S2S) protocol with TLS support.
 
 Protocol implementation based on [go-s2s](https://github.com/mikedickey/go-s2s) from mike [at] mikedickey.com.

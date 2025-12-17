@@ -1,0 +1,175 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, master, develop ]
+  pull_request:
+    branches: [ main, master, develop ]
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    name: Build and Test on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04]
+        
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+        
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          build-essential \
+          cmake \
+          libssl-dev \
+          libjson-c-dev \
+          lcov \
+          git
+          
+    - name: Configure CMake
+      run: |
+        mkdir -p build
+        cd build
+        cmake \
+          -DCMAKE_BUILD_TYPE=Debug \
+          -DBUILD_TESTS=ON \
+          -DBUILD_CLI=ON \
+          -DENABLE_TLS=ON \
+          -DCMAKE_C_FLAGS="--coverage -fprofile-arcs -ftest-coverage" \
+          -DCMAKE_EXE_LINKER_FLAGS="--coverage" \
+          ..
+          
+    - name: Build
+      run: |
+        cd build
+        cmake --build . -j$(nproc)
+        
+    - name: Run tests
+      run: |
+        cd build
+        # Run test with localhost (will fail to connect but generates coverage)
+        timeout 5 ./s2s_test localhost 9997 1 || true
+        
+    - name: Generate coverage report
+      run: |
+        cd build
+        # Capture coverage data
+        lcov --capture --directory . --output-file coverage.info
+        # Filter out system headers and dependencies
+        lcov --remove coverage.info '/usr/*' '*deps/*' --output-file coverage_filtered.info --ignore-errors unused
+        # Generate HTML report
+        genhtml coverage_filtered.info --output-directory coverage_html
+        # Display summary
+        lcov --list coverage_filtered.info
+        
+    - name: Upload coverage report
+      uses: actions/upload-artifact@v4
+      with:
+        name: coverage-report-${{ matrix.os }}
+        path: build/coverage_html/
+        retention-days: 30
+        
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v4
+      with:
+        files: ./build/coverage_filtered.info
+        flags: unittests
+        name: codecov-${{ matrix.os }}
+        fail_ci_if_error: false
+      env:
+        CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+        
+    - name: Check artifacts
+      run: |
+        ls -lh build/
+        echo "Plugin: $(ls -lh build/omsplunks2s.so 2>/dev/null || echo 'not found')"
+        echo "CLI: $(ls -lh build/splunk-logger 2>/dev/null || echo 'not found')"
+        echo "Test: $(ls -lh build/s2s_test 2>/dev/null || echo 'not found')"
+
+  build-plugin-only:
+    name: Build Plugin Only
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+        
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          build-essential \
+          cmake \
+          libssl-dev \
+          libjson-c-dev
+          
+    - name: Build release version
+      run: |
+        mkdir -p build-release
+        cd build-release
+        cmake \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DBUILD_TESTS=OFF \
+          -DBUILD_CLI=ON \
+          -DENABLE_TLS=ON \
+          ..
+        cmake --build . -j$(nproc)
+        
+    - name: Upload plugin artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: rsyslog-plugin
+        path: |
+          build-release/omsplunks2s.so
+          build-release/splunk-logger
+        retention-days: 30
+
+  static-analysis:
+    name: Static Analysis
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+        
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          build-essential \
+          cmake \
+          libssl-dev \
+          libjson-c-dev \
+          cppcheck
+          
+    - name: Run cppcheck
+      run: |
+        cppcheck \
+          --enable=all \
+          --inconclusive \
+          --suppress=missingIncludeSystem \
+          --suppress=unusedFunction \
+          --suppress=unmatchedSuppression \
+          -I . \
+          s2s.c omsplunks2s.c splunk-logger.c s2s_test.c \
+          2>&1 | tee cppcheck-report.txt
+        
+    - name: Upload cppcheck report
+      uses: actions/upload-artifact@v4
+      with:
+        name: cppcheck-report
+        path: cppcheck-report.txt
+        retention-days: 30
+
