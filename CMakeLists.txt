@@ -69,7 +69,7 @@ if(BUILD_RSYSLOG_PLUGIN)
         message(
           FATAL_ERROR
             "rsyslog headers not found. Install rsyslog-dev package.\n"
-            "  Debian/Ubuntu: sudo apt-get install rsyslog-dev libestr-dev\n"
+            "  Debian/Ubuntu: sudo apt-get install libestr-dev\n"
             "  RHEL/CentOS:   sudo dnf install rsyslog-devel libestr-devel")
       endif()
     endif()
@@ -82,7 +82,6 @@ if(BUILD_RSYSLOG_PLUGIN)
         FATAL_ERROR
           "rsyslog submodule not found at ${RSYSLOG_SUBMODULE_DIR}\n"
           "Please initialize the submodule:\n"
-          "  git submodule add -b ${RSYSLOG_VERSION} https://github.com/rsyslog/rsyslog.git deps/rsyslog\n"
           "  git submodule update --init --recursive\n"
           "Or use system rsyslog with -DUSE_SYSTEM_RSYSLOG=ON")
     endif()
