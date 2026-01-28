@@ -67,6 +67,26 @@ module(load="omsplunks2s")
 )
 ```
 
+### With Custom Template
+
+```conf
+module(load="omsplunks2s")
+module(load="mmfields")
+
+# Example with extraction (remove a '[json_payload] payload sent:' prefix)
+set $._payload = re_extract($msg, ".*\\[json_payload\\] payload sent: *(.*)", 0, 1, "");
+
+# Template with extracted info
+template(name="myCustomTemplate" type="string" string="{\"payloads\": %$._payload% }")
+
+*.* action(
+    type="omsplunks2s"
+    server="splunk.example.com"
+    port="9997"
+    template="myCustomTemplate"
+)
+```
+
 ### With TLS
 
 ```conf
@@ -119,20 +139,21 @@ module(load="omsplunks2s")
 
 ### Parameters
 
-| Parameter            | Required | Default         | Description                               |
-|----------------------|----------|-----------------|-------------------------------------------|
-| `server`             | Yes      | -               | Splunk server hostname/IP                 |
-| `port`               | No       | `9997`          | Splunk S2S port                           |
-| `index`              | No       | -               | Target Splunk index                       |
-| `host`               | No       | System hostname | Host field for events in Splunk           |
-| `source`             | No       | `rsyslog`       | Source field for events in Splunk         |
-| `sourcetype`         | No       | `syslog`        | Sourcetype field for events in Splunk     |
-| `reconnect.interval` | No       | `5`             | Reconnection interval in seconds          |
-| `tls`                | No       | `off`           | Enable TLS encryption                     |
-| `tls.verify`         | No       | `off`           | Enable TLS certificate verification       |
-| `tls.cacert`         | No       | -               | CA certificate path (for verification)    |
-| `tls.cert`           | No       | -               | Client certificate path (for mutual auth) |
-| `tls.key`            | No       | -               | Client private key path (for mutual auth) |
+| Parameter            | Required | Default         | Description                                            |
+|----------------------|----------|-----------------|--------------------------------------------------------|
+| `server`             | Yes      | -               | Splunk server hostname/IP                              |
+| `port`               | No       | `9997`          | Splunk S2S port                                        |
+| `index`              | No       | -               | Target Splunk index                                    |
+| `host`               | No       | System hostname | Host field for events in Splunk                        |
+| `source`             | No       | `rsyslog`       | Source field for events in Splunk                      |
+| `sourcetype`         | No       | `syslog`        | Sourcetype field for events in Splunk                  |
+| `template`           | No       | -               | Custom rsyslog template to override raw message format |
+| `reconnect.interval` | No       | `5`             | Reconnection interval in seconds                       |
+| `tls`                | No       | `off`           | Enable TLS encryption                                  |
+| `tls.verify`         | No       | `off`           | Enable TLS certificate verification                    |
+| `tls.cacert`         | No       | -               | CA certificate path (for verification)                 |
+| `tls.cert`           | No       | -               | Client certificate path (for mutual auth)              |
+| `tls.key`            | No       | -               | Client private key path (for mutual auth)              |
 
 ## CLI Utility (splunk-logger)
 

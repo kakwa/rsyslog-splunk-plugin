@@ -73,6 +73,8 @@ typedef struct _instanceData {
     char *tls_ca_file;
     char *tls_cert_file;
     char *tls_key_file;
+    /* Template support */
+    char *template;
 } instanceData;
 
 /* Worker instance data */
@@ -86,6 +88,7 @@ static struct cnfparamdescr actpdescr[] = {
     {"host", eCmdHdlrGetWord, 0},           {"source", eCmdHdlrGetWord, 0},   {"sourcetype", eCmdHdlrGetWord, 0},
     {"reconnect.interval", eCmdHdlrInt, 0}, {"tls", eCmdHdlrBinary, 0},       {"tls.verify", eCmdHdlrBinary, 0},
     {"tls.cacert", eCmdHdlrGetWord, 0},     {"tls.cert", eCmdHdlrGetWord, 0}, {"tls.key", eCmdHdlrGetWord, 0},
+    {"template", eCmdHdlrGetWord, 0},
 };
 static struct cnfparamblk actpblk = {CNFPARAMBLK_VERSION, sizeof(actpdescr) / sizeof(struct cnfparamdescr), actpdescr};
 
@@ -177,6 +180,7 @@ static rsRetVal createInstance(instanceData **ppData) {
     pData->tls_ca_file = NULL;
     pData->tls_cert_file = NULL;
     pData->tls_key_file = NULL;
+    pData->template = NULL;
     pthread_mutex_init(&pData->mtx, NULL);
 
     /* ENDcreateInstance */
@@ -224,6 +228,7 @@ static rsRetVal freeInstance(void *pModData) {
     free(pData->tls_ca_file);
     free(pData->tls_cert_file);
     free(pData->tls_key_file);
+    free(pData->template);
 
     /* ENDfreeInstance */
     if (pData != NULL)
@@ -257,6 +262,7 @@ static rsRetVal dbgPrintInstInfo(void *pModData) {
     dbgprintf("\tport=%d\n", pData->port);
     dbgprintf("\tindex='%s'\n", pData->index ? pData->index : "(null)");
     dbgprintf("\tsourcetype='%s'\n", pData->sourcetype ? pData->sourcetype : "(null)");
+    dbgprintf("\ttemplate='%s'\n", pData->template ? pData->template : "(using default)");
     dbgprintf("\ttls=%d\n", pData->tls_enabled);
     dbgprintf("\ttls.verify=%d\n", pData->tls_verify);
     dbgprintf("\ttls.cacert='%s'\n", pData->tls_ca_file ? pData->tls_ca_file : "(null)");
@@ -342,13 +348,14 @@ static rsRetVal doAction(void *pMsgData, wrkrInstanceData_t *pWrkrData) {
     dbgprintf(
         "omsplunks2s: sending event: msg='%.100s', host='%s', source='%s', sourcetype='%s', index='%s', fields=%d "
         "[syslog_procid='%s', syslog_severity='%s', syslog_hostname='%s', syslog_program='%s', "
-        "rsyslog_plugin='omsplunks2s']\n",
+        "rsyslog_plugin='omsplunks2s']%s\n",
         event.raw ? event.raw : "(null)", event.host ? event.host : "(null)", event.source ? event.source : "(null)",
         event.sourcetype ? event.sourcetype : "(null)", event.index ? event.index : "(null)", event.field_count,
         (ppString[1] && ppString[1][0]) ? (const char *)ppString[1] : "(null)",
         (ppString[2] && ppString[2][0]) ? (const char *)ppString[2] : "(null)",
         (ppString[3] && ppString[3][0]) ? (const char *)ppString[3] : "(null)",
-        (ppString[4] && ppString[4][0]) ? (const char *)ppString[4] : "(null)");
+        (ppString[4] && ppString[4][0]) ? (const char *)ppString[4] : "(null)",
+        pData->template ? " (custom template)" : "");
 
     /* Send event */
     err = s2s_send(pData->conn, &event);
@@ -430,6 +437,8 @@ static rsRetVal newActInst(uchar __attribute__((unused)) * modName, struct nvlst
             pData->tls_cert_file = es_str2cstr(pvals[i].val.d.estr, "");
         } else if (!strcmp(actpblk.descr[i].name, "tls.key")) {
             pData->tls_key_file = es_str2cstr(pvals[i].val.d.estr, "");
+        } else if (!strcmp(actpblk.descr[i].name, "template")) {
+            pData->template = es_str2cstr(pvals[i].val.d.estr, NULL);
         } else {
             dbgprintf("omsplunks2s: program error, non-handled param '%s'\n", actpblk.descr[i].name);
         }
@@ -446,12 +455,20 @@ static rsRetVal newActInst(uchar __attribute__((unused)) * modName, struct nvlst
         pData->sourcetype = strdup("syslog");
     }
 
-    dbgprintf("omsplunks2s: registering template SPLUNK_S2S_RAWMSG'\n");
     /* Setup templates - message + metadata fields (max 7 due to rsyslog limit) */
-    /* Template 0: Raw message */
-    if ((iRet = OMSRsetEntry(*ppOMSR, 0, (uchar *)strdup(" SPLUNK_S2S_RAWMSG"), OMSR_NO_RQD_TPL_OPTS)) != RS_RET_OK)
-        goto finalize_it;
-    /* Template 1: syslog facility */
+    /* Template 0: Raw message - use custom template if specified, otherwise default */
+    if (pData->template != NULL) {
+        dbgprintf("omsplunks2s: using custom template '%s' for raw message\n", pData->template);
+        if ((iRet = OMSRsetEntry(*ppOMSR, 0, (uchar *)strdup((char *)pData->template), OMSR_NO_RQD_TPL_OPTS)) !=
+            RS_RET_OK)
+            goto finalize_it;
+    } else {
+        dbgprintf("omsplunks2s: using default template SPLUNK_S2S_RAWMSG for raw message\n");
+        if ((iRet = OMSRsetEntry(*ppOMSR, 0, (uchar *)strdup(" SPLUNK_S2S_RAWMSG"), OMSR_NO_RQD_TPL_OPTS)) != RS_RET_OK)
+            goto finalize_it;
+    }
+
+    /* Template 1: syslog procid */
     dbgprintf("omsplunks2s: registering template SPLUNK_S2S_PROCID'\n");
     if ((iRet = OMSRsetEntry(*ppOMSR, 1, (uchar *)strdup(" SPLUNK_S2S_PROCID"), OMSR_NO_RQD_TPL_OPTS)) != RS_RET_OK)
         goto finalize_it;
